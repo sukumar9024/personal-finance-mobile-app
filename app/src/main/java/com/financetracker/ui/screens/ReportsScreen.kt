@@ -1,6 +1,7 @@
 package com.financetracker.ui.screens
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,28 +12,45 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.PieChart
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.financetracker.ui.theme.*
+import com.financetracker.data.model.Category
+import com.financetracker.ui.theme.CardShape
+import com.financetracker.ui.theme.FinanceHeroCard
+import com.financetracker.ui.theme.FinanceSectionHeader
+import com.financetracker.ui.theme.FinanceStatPill
+import com.financetracker.ui.theme.ScreenPadding
+import com.financetracker.ui.theme.categoryColor
+import com.financetracker.ui.theme.formatCurrency
+import com.financetracker.ui.theme.formatCurrencyRounded
 import com.financetracker.ui.viewmodel.ExpenseViewModel
-import java.time.LocalDate
-import java.time.format.DateTimeFormatter
-import kotlin.math.roundToLong
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,10 +58,8 @@ fun ReportsScreen(
     viewModel: ExpenseViewModel,
     onNavigateBack: () -> Unit
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val categoryState by viewModel.categoryState.collectAsState()
-
-    // Calculate totals by category
+    val uiState = viewModel.uiState.collectAsState().value
+    val categoryState = uiState.categoryState
     val expenses = uiState.expenses
     val categoryTotals = expenses.groupBy { it.category }
         .mapValues { (_, exp) -> exp.sumOf { it.amount } }
@@ -51,17 +67,22 @@ fun ReportsScreen(
         .sortedByDescending { it.second }
 
     val totalExpenses = expenses.sumOf { it.amount }
-    val formattedTotal = "₹${"%,.2f".format(totalExpenses)}"
+    val highestSpend = categoryTotals.firstOrNull()?.second ?: 0.0
+    val highestCategory = categoryTotals.firstOrNull()?.first ?: "None yet"
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Reports",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text("Reports", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "Visualize category performance",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
@@ -75,148 +96,97 @@ fun ReportsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
                 .verticalScroll(rememberScrollState())
+                .padding(horizontal = ScreenPadding, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // Summary Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            FinanceHeroCard(modifier = Modifier.fillMaxWidth()) {
+                FinanceSectionHeader(
+                    title = "Monthly report",
+                    subtitle = "Break down how this month's expenses are distributed"
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Total Expenses (${uiState.currentMonthSheet.replace("expenses_", "")})",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = formatCurrency(totalExpenses),
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FinanceStatPill(
+                        label = "Transactions",
+                        value = "${expenses.size}",
+                        modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = formattedTotal,
-                        fontSize = 36.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "${expenses.size} transactions",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    FinanceStatPill(
+                        label = "Top Category",
+                        value = highestCategory,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
-
             if (expenses.isEmpty()) {
-                Box(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    contentAlignment = Alignment.Center
+                    shape = CardShape,
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
-                    Text(
-                        text = "No data to display. Add some expenses!",
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
+                    Column(modifier = Modifier.padding(22.dp)) {
+                        Text(
+                            text = "Nothing to analyze yet",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Add a few expenses and your category analytics will appear here.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 return@Column
             }
 
-            // Pie Chart Section
-            Text(
-                text = "By Category",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 16.dp)
+            FinanceSectionHeader(
+                title = "Category split",
+                subtitle = "A quick visual of where the money is concentrated"
             )
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                shape = CardShape,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(200.dp),
+                            .height(260.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (categoryTotals.isNotEmpty()) {
-                            PieChart(
-                                data = categoryTotals,
-                                total = totalExpenses,
-                                categories = categoryState.categories
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Legend
-                    categoryTotals.forEach { (category, amount) ->
-                        val percentage = (amount / totalExpenses * 100)
-                        val categoryColor = categoryState.categories
-                            .find { it.name == category }
-                            ?.let { Color(android.graphics.Color.parseColor(it.color)) }
-                            ?: Purple40
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(12.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(categoryColor)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = category,
-                                    fontSize = 12.sp,
-                                    maxLines = 1
-                                )
-                            }
+                        DonutChart(
+                            data = categoryTotals,
+                            total = totalExpenses,
+                            categories = categoryState.categories
+                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = "${"%.1f".format(percentage)}%",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
+                                text = "Top spend",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = formatCurrencyRounded(highestSpend),
+                                style = MaterialTheme.typography.titleLarge
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
                     }
-                }
-            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-            // Category Breakdown List
-            Text(
-                text = "Category Breakdown",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
-
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
                     categoryTotals.forEach { (category, amount) ->
-                        val categoryColor = categoryState.categories
-                            .find { it.name == category }
-                            ?.let { Color(android.graphics.Color.parseColor(it.color)) }
-                            ?: Purple40
+                        val percentage = if (totalExpenses > 0) amount / totalExpenses * 100 else 0.0
+                        val accent = categoryColor(categoryState.categories.find { it.name == category })
 
                         Row(
                             modifier = Modifier
@@ -227,57 +197,92 @@ fun ReportsScreen(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(categoryColor)
+                                        .size(12.dp)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(accent)
                                 )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = category,
-                                    fontSize = 14.sp
-                                )
+                                Column {
+                                    Text(category, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        text = formatCurrency(amount),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                             Text(
-                                text = "₹${"%,.2f".format(amount)}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium
+                                text = String.format(Locale.US, "%.1f%%", percentage),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = accent
                             )
                         }
+                    }
+                }
+            }
 
-                        // Progress bar for budget (if available)
-                        val categoryBudget = categoryState.categories
-                            .find { it.name == category }
-                            ?.monthlyBudget
+            FinanceSectionHeader(
+                title = "Budget progress",
+                subtitle = "Track category budgets against actual spend"
+            )
 
-                        if (categoryBudget != null && categoryBudget > 0) {
-                            val progress = (amount / categoryBudget).toFloat().coerceIn(0f, 1f)
-                            val progressColor = if (progress > 1f) MaterialTheme.colorScheme.error
-                                            else if (progress > 0.8f) MaterialTheme.colorScheme.tertiary
-                                            else MaterialTheme.colorScheme.primary
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = CardShape,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    categoryTotals.forEach { (category, amount) ->
+                        val categoryModel = categoryState.categories.find { it.name == category }
+                        val budget = categoryModel?.monthlyBudget
+                        val accent = categoryColor(categoryModel)
 
-                            Spacer(modifier = Modifier.height(4.dp))
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp)),
-                                color = progressColor,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Budget: ₹${"%,.0f".format(categoryBudget)}",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
+                        Column(modifier = Modifier.padding(vertical = 10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column {
+                                    Text(category, style = MaterialTheme.typography.titleSmall)
+                                    Text(
+                                        text = formatCurrency(amount),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(
+                                    text = if (budget != null && budget > 0.0) {
+                                        "${((amount / budget) * 100).toInt()}%"
+                                    } else {
+                                        "No budget"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = accent
+                                )
+                            }
+
+                            if (budget != null && budget > 0.0) {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LinearProgressIndicator(
+                                    progress = (amount / budget).toFloat().coerceIn(0f, 1f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .clip(RoundedCornerShape(99.dp)),
+                                    color = accent,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "Budget ${formatCurrencyRounded(budget)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
-
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
@@ -286,54 +291,34 @@ fun ReportsScreen(
 }
 
 @Composable
-fun PieChart(
+private fun DonutChart(
     data: List<Pair<String, Double>>,
     total: Double,
-    categories: List<com.financetracker.data.model.Category>
+    categories: List<Category>
 ) {
-    Canvas(
-        modifier = Modifier.fillMaxSize()
-    ) {
-        if (total == 0.0) return@Canvas
+    Canvas(modifier = Modifier.size(220.dp)) {
+        if (data.isEmpty() || total <= 0.0) return@Canvas
 
-        val size = size.minDimension
-        val radius = size / 2f
-        
+        val diameter = size.minDimension
+        val strokeWidth = diameter * 0.18f
+        val arcSize = Size(diameter - strokeWidth, diameter - strokeWidth)
+        val topLeft = Offset(strokeWidth / 2, strokeWidth / 2)
         var startAngle = -90f
-        data.forEach { (category, amount) ->
-            val sweepAngle = (amount / total * 360).toFloat()
-            val categoryColor = categories
-                .find { it.name == category }
-                ?.let { Color(android.graphics.Color.parseColor(it.color)) }
-                ?: Purple40
 
-            drawPieSlice(
-                color = categoryColor,
+        data.forEach { (category, amount) ->
+            val sweepAngle = ((amount / total) * 360f).toFloat()
+            val accent = categoryColor(categories.find { it.name == category })
+
+            drawArc(
+                color = accent,
                 startAngle = startAngle,
                 sweepAngle = sweepAngle,
-                radius = radius
+                useCenter = false,
+                topLeft = topLeft,
+                size = arcSize,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
             startAngle += sweepAngle
         }
     }
 }
-
-private fun DrawScope.drawPieSlice(
-    color: Color,
-    startAngle: Float,
-    sweepAngle: Float,
-    radius: Float
-) {
-    drawArc(
-        color = color,
-        startAngle = startAngle,
-        sweepAngle = sweepAngle,
-        useCenter = true,
-        size = Size(radius * 2, radius * 2)
-    )
-}
-
-// Note: categoryState needs to be passed or accessed differently in PieChart
-// For simplicity, we'll make it a parameter or use a different approach
-// Adjusting the PieChart call to pass categoryState
-// (Implementation would need refactoring for cleaner architecture)

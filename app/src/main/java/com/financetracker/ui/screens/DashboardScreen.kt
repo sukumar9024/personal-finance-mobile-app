@@ -1,9 +1,11 @@
 package com.financetracker.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,23 +16,53 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.Expense
-import com.financetracker.ui.theme.*
+import com.financetracker.ui.theme.CardShape
+import com.financetracker.ui.theme.FinanceHeroCard
+import com.financetracker.ui.theme.FinanceInlineBadge
+import com.financetracker.ui.theme.FinanceSectionHeader
+import com.financetracker.ui.theme.FinanceStatPill
+import com.financetracker.ui.theme.ScreenPadding
+import com.financetracker.ui.theme.categoryColor
+import com.financetracker.ui.theme.formatCurrency
+import com.financetracker.ui.theme.formatCurrencyRounded
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -46,178 +78,218 @@ fun DashboardScreen(
     onSettingsClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val categoryState by viewModel.categoryState.collectAsState()
+    val averageSpend = if (uiState.expenses.isNotEmpty()) {
+        uiState.totalAmount / uiState.expenses.size
+    } else {
+        0.0
+    }
+    val highlightedCategories = uiState.categoryState.categories.take(4)
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(text = "Finance Tracker", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = uiState.currentMonthSheet.replace("expenses_", ""),
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            text = "Finance Tracker",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                        Text(
+                            text = uiState.currentMonthSheet
+                                .removePrefix("expenses_")
+                                .replace("_", " / "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 actions = {
-                    IconButton(onClick = onReportsClick) {
-                        Icon(Icons.Default.Assessment, contentDescription = "Reports")
-                    }
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
+                    TopBarAction(
+                        icon = Icons.Default.Analytics,
+                        contentDescription = "Reports",
+                        onClick = onReportsClick
+                    )
+                    TopBarAction(
+                        icon = Icons.Default.Settings,
+                        contentDescription = "Settings",
+                        onClick = onSettingsClick
+                    )
                 }
             )
         },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = onAddExpenseClick,
-                containerColor = MaterialTheme.colorScheme.primary
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Expense")
             }
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.background,
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                            MaterialTheme.colorScheme.background
+                        )
+                    )
+                )
         ) {
-            // Total Expenses Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    start = ScreenPadding,
+                    end = ScreenPadding,
+                    top = paddingValues.calculateTopPadding() + 8.dp,
+                    bottom = paddingValues.calculateBottomPadding() + 96.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "Total Expenses",
-                        fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                    Text(
-                        text = "₹${"%,.2f".format(uiState.totalAmount)}",
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "${uiState.expenses.size} transactions",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Categories Quick View
-            if (categoryState.categories.isNotEmpty()) {
-                Text(
-                    text = "By Category",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    categoryState.categories.take(4).forEach { category ->
-                        CategorySummary(
-                            category = category,
-                            amount = uiState.expenses
-                                .filter { it.category == category.name }
-                                .sumOf { it.amount }
+                item {
+                    FinanceHeroCard(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        FinanceInlineBadge(text = "Live monthly snapshot")
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Text(
+                            text = "Total spend",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = formatCurrency(uiState.totalAmount),
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "${uiState.expenses.size} transactions captured this month",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            FinanceStatPill(
+                                label = "Average",
+                                value = formatCurrency(averageSpend),
+                                modifier = Modifier.weight(1f)
+                            )
+                            FinanceStatPill(
+                                label = "Top Category",
+                                value = topCategoryLabel(uiState.expenses),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
 
-            // Error handling
-            if (uiState.error != null) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
-                    )
-                ) {
+                item {
                     Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Icon(
-                            Icons.Default.Error,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error
+                        QuickActionCard(
+                            title = "Reports",
+                            subtitle = "Charts and trends",
+                            icon = Icons.Default.Analytics,
+                            onClick = onReportsClick,
+                            modifier = Modifier.weight(1f)
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = uiState.error ?: "",
-                            color = MaterialTheme.colorScheme.error
+                        QuickActionCard(
+                            title = "Appearance",
+                            subtitle = "Theme and setup",
+                            icon = Icons.Default.Palette,
+                            onClick = onSettingsClick,
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-            }
 
-            // Expenses List
-            if (uiState.isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            } else if (uiState.expenses.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Default.ReceiptLong,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "No expenses yet",
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                        Text(
-                            text = "Tap + to add your first expense",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                        )
+                if (highlightedCategories.isNotEmpty()) {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FinanceSectionHeader(
+                                title = "Category overview",
+                                subtitle = "See where your money is moving"
+                            )
+                            TextButton(onClick = onCategoriesClick) {
+                                Text("Manage")
+                            }
+                        }
+                    }
+
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            highlightedCategories.forEach { category ->
+                                CategorySummaryCard(
+                                    category = category,
+                                    amount = uiState.expenses
+                                        .filter { it.category == category.name }
+                                        .sumOf { it.amount },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
                     }
                 }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(uiState.expenses) { expense ->
-                        ExpenseCard(
-                            expense = expense,
-                            categoryColor = categoryState.categories
-                                .find { it.name == expense.category }
-                                ?.let { Color(android.graphics.Color.parseColor(it.color)) }
-                                ?: Purple40,
-                            onClick = { onExpenseClick(expense) }
-                        )
+
+                if (uiState.errorMessage != null) {
+                    item {
+                        StatusBanner(message = uiState.errorMessage)
+                    }
+                }
+
+                item {
+                    FinanceSectionHeader(
+                        title = "Recent expenses",
+                        subtitle = "Your latest logged purchases and payments"
+                    )
+                }
+
+                when {
+                    uiState.isLoading -> {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 40.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+
+                    uiState.expenses.isEmpty() -> {
+                        item {
+                            EmptyExpensesState(onAddExpenseClick = onAddExpenseClick)
+                        }
+                    }
+
+                    else -> {
+                        items(uiState.expenses, key = { it.id }) { expense ->
+                            ExpenseCard(
+                                expense = expense,
+                                categoryColor = categoryColor(
+                                    uiState.categoryState.categories.find { it.name == expense.category }
+                                ),
+                                onClick = { onExpenseClick(expense) }
+                            )
+                        }
                     }
                 }
             }
@@ -226,47 +298,215 @@ fun DashboardScreen(
 }
 
 @Composable
-fun CategorySummary(
-    category: Category,
-    amount: Double
+private fun TopBarAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable { }
-            .padding(8.dp)
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(Color(android.graphics.Color.parseColor(category.color)).copy(alpha = 0.2f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                Icons.Default.Category,
-                contentDescription = category.name,
-                tint = Color(android.graphics.Color.parseColor(category.color)),
-                modifier = Modifier.size(20.dp)
-            )
+        IconButton(onClick = onClick) {
+            Icon(icon, contentDescription = contentDescription)
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = category.name,
-            fontSize = 10.sp,
-            maxLines = 1
-        )
-        Text(
-            text = "₹${"%,.0f".format(amount)}",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = Purple40
-        )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun QuickActionCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
+            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatusBanner(message: String?) {
+    if (message.isNullOrBlank()) return
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = CardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyExpensesState(
+    onAddExpenseClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = CardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ReceiptLong,
+                    contentDescription = null,
+                    modifier = Modifier.size(34.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Your timeline is empty",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = "Add your first expense to start building a cleaner monthly picture.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(18.dp))
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onAddExpenseClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
+                    Text(
+                        text = "Add first expense",
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CategorySummaryCard(
+    category: Category,
+    amount: Double,
+    modifier: Modifier = Modifier
+) {
+    val accent = categoryColor(category)
+
+    Card(
+        modifier = modifier,
+        shape = CardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(accent.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Category,
+                    contentDescription = category.name,
+                    tint = accent
+                )
+            }
+            Text(
+                text = category.name,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = formatCurrencyRounded(amount),
+                style = MaterialTheme.typography.titleSmall,
+                color = accent
+            )
+        }
+    }
+}
+
 @Composable
 fun ExpenseCard(
     expense: Expense,
@@ -277,83 +517,103 @@ fun ExpenseCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
+        shape = CardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(18.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(categoryColor.copy(alpha = 0.15f)),
+                        .size(50.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(categoryColor.copy(alpha = 0.16f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.ShoppingCart,
+                        imageVector = Icons.Default.ShoppingCart,
                         contentDescription = expense.category,
-                        tint = categoryColor,
-                        modifier = Modifier.size(24.dp)
+                        tint = categoryColor
                     )
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = expense.category,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold
+                        style = MaterialTheme.typography.titleSmall
                     )
                     if (expense.subcategory?.isNotBlank() == true) {
                         Text(
                             text = expense.subcategory,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     if (expense.description.isNotBlank()) {
                         Text(
                             text = expense.description,
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                            maxLines = 1
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                     Text(
-                        text = expense.date.format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        text = expense.date.format(DateTimeFormatter.ofPattern("dd MMM yyyy")),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
             Column(
-                horizontalAlignment = Alignment.End
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 Text(
-                    text = "₹${"%,.2f".format(expense.amount)}",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
+                    text = formatCurrency(expense.amount),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-                if (expense.paymentMethod != "Cash") {
-                    Text(
-                        text = expense.paymentMethod,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (expense.paymentMethod != "Cash") {
+                        Text(
+                            text = expense.paymentMethod.uppercase(Locale.US),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         }
     }
+}
+
+private fun topCategoryLabel(expenses: List<Expense>): String {
+    val topCategory = expenses
+        .groupBy { it.category }
+        .maxByOrNull { (_, groupedExpenses) -> groupedExpenses.sumOf { it.amount } }
+        ?.key
+
+    return topCategory ?: "None yet"
 }

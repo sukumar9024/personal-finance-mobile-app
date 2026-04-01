@@ -6,173 +6,218 @@ import androidx.lifecycle.viewModelScope
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.Expense
 import com.financetracker.data.repository.GoogleSheetsRepository
+import com.financetracker.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import java.time.LocalDate
 
-data class ExpenseUiState(
-    val expenses: List<Expense> = emptyList(),
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val totalAmount: Double = 0.0,
-    val currentMonthSheet: String = ""
+data class CategoryState(
+    val categories: List<Category> = emptyList(),
+    val isLoading: Boolean = false
 )
 
-data class CategoryUiState(
-    val categories: List<Category> = emptyList(),
+data class FinanceTrackerUiState(
+    val expenses: List<Expense> = emptyList(),
+    val categoryState: CategoryState = CategoryState(),
+    val currentMonthSheet: String = "",
+    val totalAmount: Double = 0.0,
     val isLoading: Boolean = false,
-    val error: String? = null
+    val errorMessage: String? = null,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM
 )
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
-
     private val repository = GoogleSheetsRepository(application)
 
-    private val _uiState = MutableStateFlow(ExpenseUiState())
-    val uiState: StateFlow<ExpenseUiState> = _uiState.asStateFlow()
-
-    private val _categoryState = MutableStateFlow(CategoryUiState())
-    val categoryState: StateFlow<CategoryUiState> = _categoryState.asStateFlow()
+    private val _uiState = MutableStateFlow(
+        FinanceTrackerUiState(
+            currentMonthSheet = repository.getCurrentMonthSheetName()
+        )
+    )
+    val uiState: StateFlow<FinanceTrackerUiState> = _uiState.asStateFlow()
 
     init {
-        loadCurrentMonthSheet()
-        loadCategories()
-        loadExpenses()
-    }
-
-    private fun loadCurrentMonthSheet() {
-        viewModelScope.launch {
-            val sheetName = repository.getCurrentMonthSheetName()
-            _uiState.value = _uiState.value.copy(currentMonthSheet = sheetName)
-        }
+        refreshAllData()
     }
 
     fun loadExpenses() {
-        val sheetName = _uiState.value.currentMonthSheet
-        if (sheetName.isBlank()) {
-            viewModelScope.launch {
-                val newSheetName = repository.getCurrentMonthSheetName()
-                _uiState.value = _uiState.value.copy(currentMonthSheet = newSheetName)
-            }
+        val currentSheet = _uiState.value.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+
+        if (!repository.isReadyForLiveSync()) {
+            _uiState.value = _uiState.value.copy(
+                currentMonthSheet = currentSheet,
+                isLoading = false,
+                totalAmount = _uiState.value.expenses.sumOf { it.amount },
+                errorMessage = repository.getConfigurationStatusMessage()
+            )
             return
         }
 
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
-            // Ensure sheet exists first
-            val sheetCreated = repository.ensureMonthSheetExists(sheetName)
-            if (sheetCreated) {
-                val expenses = repository.fetchExpenses(sheetName)
-                val total = expenses.sumOf { it.amount }
+            _uiState.value = _uiState.value.copy(isLoading = true)
+            runCatching {
+                repository.fetchExpenses(currentSheet)
+            }.onSuccess { expenses ->
                 _uiState.value = _uiState.value.copy(
-                    expenses = expenses.sortedByDescending { it.date },
-                    totalAmount = total,
-                    isLoading = false
-                )
-            } else {
-                _uiState.value = _uiState.value.copy(
+                    currentMonthSheet = currentSheet,
+                    expenses = expenses,
+                    totalAmount = expenses.sumOf { it.amount },
                     isLoading = false,
-                    error = "Failed to load expenses. Please check your connection and spreadsheet access."
+                    errorMessage = repository.getConfigurationStatusMessage()
+                )
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    currentMonthSheet = currentSheet,
+                    isLoading = false,
+                    errorMessage = error.message ?: "Failed to load expenses from Google Sheets."
                 )
             }
         }
     }
 
     fun loadCategories() {
-        _categoryState.value = _categoryState.value.copy(isLoading = true, error = null)
         viewModelScope.launch {
-            val categories = repository.fetchCategories()
-            _categoryState.value = _categoryState.value.copy(
-                categories = categories,
-                isLoading = false
+            _uiState.value = _uiState.value.copy(
+                categoryState = _uiState.value.categoryState.copy(isLoading = true)
+            )
+
+            runCatching {
+                repository.fetchCategories()
+            }.onSuccess { categories ->
+                _uiState.value = _uiState.value.copy(
+                    categoryState = CategoryState(
+                        categories = categories,
+                        isLoading = false
+                    ),
+                    errorMessage = repository.getConfigurationStatusMessage()
+                )
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    categoryState = _uiState.value.categoryState.copy(isLoading = false),
+                    errorMessage = error.message ?: "Failed to load categories."
+                )
+            }
+        }
+    }
+
+    fun addExpense(expense: Expense) {
+        if (!repository.isReadyForLiveSync()) {
+            val newExpenses = _uiState.value.expenses + expense
+            _uiState.value = _uiState.value.copy(
+                expenses = newExpenses,
+                totalAmount = newExpenses.sumOf { it.amount },
+                errorMessage = repository.getConfigurationStatusMessage()
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            val currentSheet = _uiState.value.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+            runCatching {
+                repository.addExpense(currentSheet, expense)
+            }.onSuccess {
+                loadExpenses()
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = error.message ?: "Failed to add expense to Google Sheets."
+                )
+            }
+        }
+    }
+
+    fun updateExpense(expense: Expense) {
+        if (!repository.isReadyForLiveSync()) {
+            val newExpenses = _uiState.value.expenses.map {
+                if (it.id == expense.id) expense else it
+            }
+            _uiState.value = _uiState.value.copy(
+                expenses = newExpenses,
+                totalAmount = newExpenses.sumOf { it.amount },
+                errorMessage = repository.getConfigurationStatusMessage()
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            val currentSheet = _uiState.value.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+            runCatching {
+                repository.updateExpense(currentSheet, expense)
+            }.onSuccess {
+                loadExpenses()
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = error.message ?: "Failed to update expense in Google Sheets."
+                )
+            }
+        }
+    }
+
+    fun deleteExpense(id: String) {
+        if (!repository.isReadyForLiveSync()) {
+            val newExpenses = _uiState.value.expenses.filter { it.id != id }
+            _uiState.value = _uiState.value.copy(
+                expenses = newExpenses,
+                totalAmount = newExpenses.sumOf { it.amount },
+                errorMessage = repository.getConfigurationStatusMessage()
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            val currentSheet = _uiState.value.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+            runCatching {
+                repository.deleteExpense(currentSheet, id)
+            }.onSuccess {
+                loadExpenses()
+            }.onFailure { error ->
+                _uiState.value = _uiState.value.copy(
+                    errorMessage = error.message ?: "Failed to delete expense from Google Sheets."
+                )
+            }
+        }
+    }
+
+    fun setThemeMode(themeMode: ThemeMode) {
+        _uiState.value = _uiState.value.copy(themeMode = themeMode)
+    }
+
+    private fun refreshAllData() {
+        viewModelScope.launch {
+            val currentSheet = repository.getCurrentMonthSheetName()
+            val categories = runCatching { repository.fetchCategories() }
+                .getOrDefault(defaultCategories())
+
+            val expenses = if (repository.isReadyForLiveSync()) {
+                runCatching { repository.fetchExpenses(currentSheet) }.getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+
+            _uiState.value = _uiState.value.copy(
+                currentMonthSheet = currentSheet,
+                categoryState = CategoryState(
+                    categories = categories,
+                    isLoading = false
+                ),
+                expenses = expenses,
+                totalAmount = expenses.sumOf { it.amount },
+                isLoading = false,
+                errorMessage = repository.getConfigurationStatusMessage()
             )
         }
     }
 
-    fun addExpense(expense: Expense, onComplete: (Boolean) -> Unit) {
-        val sheetName = _uiState.value.currentMonthSheet
-        if (sheetName.isBlank()) {
-            onComplete(false)
-            return
-        }
-
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-        viewModelScope.launch {
-            val success = repository.addExpense(sheetName, expense)
-            if (success) {
-                loadExpenses() // Refresh list
-                onComplete(true)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Failed to add expense. Please try again."
-                )
-                onComplete(false)
-            }
-        }
-    }
-
-    fun updateExpense(expense: Expense, onComplete: (Boolean) -> Unit) {
-        val sheetName = _uiState.value.currentMonthSheet
-        if (sheetName.isBlank()) {
-            onComplete(false)
-            return
-        }
-
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-        viewModelScope.launch {
-            val updatedExpense = expense.copy(modifiedAt = java.time.LocalDateTime.now())
-            val success = repository.updateExpense(sheetName, updatedExpense)
-            if (success) {
-                loadExpenses()
-                onComplete(true)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Failed to update expense. Please try again."
-                )
-                onComplete(false)
-            }
-        }
-    }
-
-    fun deleteExpense(expense: Expense, onComplete: (Boolean) -> Unit) {
-        val sheetName = _uiState.value.currentMonthSheet
-        if (sheetName.isBlank() || expense.sheetRowIndex <= 0) {
-            onComplete(false)
-            return
-        }
-
-        _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-        viewModelScope.launch {
-            val success = repository.deleteExpense(sheetName, expense.sheetRowIndex)
-            if (success) {
-                loadExpenses()
-                onComplete(true)
-            } else {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "Failed to delete expense. Please try again."
-                )
-                onComplete(false)
-            }
-        }
-    }
-
-    fun getMonthlySummary(): Map<String, Double> {
-        val sheetName = _uiState.value.currentMonthSheet
-        if (sheetName.isBlank()) return emptyMap()
-
-        // Blocking call for simplicity - in production, use a proper StateFlow
-        return runBlocking {
-            repository.fetchMonthlySummary(sheetName)
-        }
-    }
-
-    fun clearError() {
-        _uiState.value = _uiState.value.copy(error = null)
+    private fun defaultCategories(): List<Category> {
+        return listOf(
+            Category("Food", "#FF5722", "restaurant", 10000.0),
+            Category("Transport", "#2196F3", "directions_car", 5000.0),
+            Category("Shopping", "#E91E63", "shopping_bag", 8000.0),
+            Category("Bills", "#9C27B0", "receipt", 15000.0),
+            Category("Entertainment", "#FF9800", "movie", 5000.0),
+            Category("Health", "#4CAF50", "local_hospital", 3000.0),
+            Category("Education", "#3F51B5", "school", 2000.0),
+            Category("Other", "#607D8B", "more_horiz", 0.0)
+        )
     }
 }

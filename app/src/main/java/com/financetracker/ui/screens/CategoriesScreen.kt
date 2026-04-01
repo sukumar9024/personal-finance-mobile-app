@@ -1,32 +1,43 @@
 package com.financetracker.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.financetracker.data.model.Category
-import com.financetracker.ui.theme.Purple40
+import com.financetracker.ui.theme.CardShape
+import com.financetracker.ui.theme.ScreenPadding
+import com.financetracker.ui.theme.categoryColor
+import com.financetracker.ui.theme.formatCurrencyRounded
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,17 +46,22 @@ fun CategoriesScreen(
     viewModel: ExpenseViewModel,
     onNavigateBack: () -> Unit
 ) {
-    val categoryState by viewModel.categoryState.collectAsState()
+    val uiState = viewModel.uiState.collectAsState().value
+    val categoryState = uiState.categoryState
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Categories",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text("Categories", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "Budgets and classification overview",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
@@ -55,40 +71,34 @@ fun CategoriesScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
+                .padding(horizontal = ScreenPadding, vertical = 12.dp)
         ) {
-            if (categoryState.isLoading) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+            when {
+                categoryState.isLoading -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                 }
-            } else if (categoryState.categories.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "No categories found",
-                            fontSize = 16.sp,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                        )
-                    }
+
+                categoryState.categories.isEmpty() -> {
+                    Text(
+                        text = "No categories available yet.",
+                        modifier = Modifier.align(Alignment.Center),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(categoryState.categories) { category ->
-                        CategoryCard(category = category)
+
+                else -> {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        items(categoryState.categories) { category ->
+                            CategoryCard(category = category)
+                        }
                     }
                 }
             }
@@ -98,50 +108,57 @@ fun CategoriesScreen(
 
 @Composable
 fun CategoryCard(category: Category) {
+    val accent = categoryColor(category)
+    val normalizedBudget = ((category.monthlyBudget ?: 0.0) / 15000.0).toFloat().coerceIn(0f, 1f)
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color(android.graphics.Color.parseColor(category.color)).copy(alpha = 0.2f)),
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(accent.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    Icons.Default.Category,
+                    imageVector = Icons.Default.Category,
                     contentDescription = category.name,
-                    tint = Color(android.graphics.Color.parseColor(category.color)),
-                    modifier = Modifier.size(28.dp)
+                    tint = accent
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = category.name,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            if (category.monthlyBudget != null) {
-                Spacer(modifier = Modifier.height(4.dp))
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "Budget: ₹${"%,.0f".format(category.monthlyBudget)}",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    text = category.name,
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = if (category.monthlyBudget != null) {
+                        "Budget ${formatCurrencyRounded(category.monthlyBudget)}"
+                    } else {
+                        "No budget assigned"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            LinearProgressIndicator(
+                progress = normalizedBudget,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(99.dp)),
+                color = accent,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
         }
     }
 }

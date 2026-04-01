@@ -22,7 +22,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun FinanceNavHost(
     navController: NavHostController = rememberNavController(),
-    viewModel: ExpenseViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    viewModel: ExpenseViewModel
 ) {
     NavHost(
         navController = navController,

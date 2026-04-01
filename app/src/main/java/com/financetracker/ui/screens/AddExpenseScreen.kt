@@ -16,20 +16,30 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.financetracker.data.model.Expense
-import com.financetracker.ui.theme.Purple40
+import com.financetracker.ui.theme.CardShape
+import com.financetracker.ui.theme.FinanceHeroCard
+import com.financetracker.ui.theme.FinanceSectionHeader
+import com.financetracker.ui.theme.ScreenPadding
+import com.financetracker.ui.theme.formatCurrency
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,14 +54,15 @@ fun AddExpenseScreen(
     var description by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf("Cash") }
     var tags by remember { mutableStateOf("") }
+    var categoryExpanded by remember { mutableStateOf(false) }
+    var paymentExpanded by remember { mutableStateOf(false) }
 
-    val categories by viewModel.categoryState.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
-
+    val context = LocalContext.current
     val paymentMethods = listOf("Cash", "Card", "UPI", "Bank Transfer", "Wallet", "Other")
 
     val datePickerDialog = DatePickerDialog(
-        LocalContext.current,
+        context,
         { _, year, month, dayOfMonth ->
             date = LocalDate.of(year, month + 1, dayOfMonth)
         },
@@ -60,219 +71,247 @@ fun AddExpenseScreen(
         date.dayOfMonth
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-            .verticalScroll(rememberScrollState())
-    ) {
-        // Top Bar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = onNavigateBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                text = "Add Expense",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(start = 16.dp)
-            )
-            Spacer(modifier = Modifier.width(48.dp))
-        }
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        // Date Field
-        OutlinedCard(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { datePickerDialog.show() }
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(text = "Date", fontSize = 12.sp, color = Purple40)
-                    Text(
-                        text = date.format(DateTimeFormatter.ofPattern("MMM dd, yyyy")),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Icon(Icons.Default.CalendarToday, contentDescription = null)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Amount Field
-        OutlinedTextField(
-            value = amount,
-            onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
-            label = { Text("Amount (₹)") },
-            leadingIcon = { Text("₹", fontSize = 18.sp) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Category Dropdown
-        ExposedDropdownMenuBox(
-            expanded = false,
-            onExpandedChange = {}
-        ) {
-            OutlinedTextField(
-                value = selectedCategory,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Category") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = false) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
-            DropdownMenu(
-                expanded = false,
-                onDismissRequest = {},
-                modifier = Modifier.fillMaxWidth(0.9f)
-            ) {
-                categories.categories.forEach { category ->
-                    DropdownMenuItem(
-                        text = { Text(category.name) },
-                        onClick = { selectedCategory = category.name }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Subcategory Field
-        OutlinedTextField(
-            value = subcategory,
-            onValueChange = { subcategory = it },
-            label = { Text("Subcategory (Optional)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Description Field
-        OutlinedTextField(
-            value = description,
-            onValueChange = { description = it },
-            label = { Text("Description (Optional)") },
-            maxLines = 3,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Payment Method Dropdown
-        ExposedDropdownMenuBox(
-            expanded = false,
-            onExpandedChange = {}
-        ) {
-            OutlinedTextField(
-                value = paymentMethod,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Payment Method") },
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = false) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .menuAnchor()
-            )
-            DropdownMenu(
-                expanded = false,
-                onDismissRequest = {},
-                modifier = Modifier.fillMaxWidth(0.9f)
-            ) {
-                paymentMethods.forEach { method ->
-                    DropdownMenuItem(
-                        text = { Text(method) },
-                        onClick = { paymentMethod = method }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Tags Field
-        OutlinedTextField(
-            value = tags,
-            onValueChange = { tags = it },
-            label = { Text("Tags (comma-separated, Optional)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // Save Button
-        Button(
-            onClick = {
-                val expense = Expense(
-                    date = date,
-                    amount = amount.toDoubleOrNull() ?: 0.0,
-                    category = selectedCategory,
-                    subcategory = subcategory.takeIf { it.isNotBlank() },
-                    description = description,
-                    paymentMethod = paymentMethod,
-                    tags = tags.split(",")
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() }
-                )
-                viewModel.addExpense(expense) { success ->
-                    if (success) {
-                        onNavigateBack()
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("Add Expense", style = MaterialTheme.typography.titleLarge)
+                        Text(
+                            text = "Capture spending with clean details",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            enabled = amount.isNotBlank() && selectedCategory.isNotBlank()
-        ) {
-            Text("Save Expense", fontSize = 16.sp)
-        }
-
-        // Error message
-        if (uiState.error != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = uiState.error ?: "",
-                color = MaterialTheme.colorScheme.error,
-                fontSize = 14.sp,
-                modifier = Modifier.padding(8.dp)
             )
+        },
+        bottomBar = {
+            Card(
+                shape = CardShape,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = ScreenPadding, vertical = 14.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val expense = Expense(
+                            id = UUID.randomUUID().toString(),
+                            date = date,
+                            amount = amount.toDoubleOrNull() ?: 0.0,
+                            category = selectedCategory,
+                            subcategory = subcategory.takeIf { it.isNotBlank() },
+                            description = description,
+                            paymentMethod = paymentMethod,
+                            tags = tags.split(",")
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                        )
+                        viewModel.addExpense(expense)
+                        onNavigateBack()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                        .height(54.dp),
+                    enabled = amount.isNotBlank() && selectedCategory.isNotBlank()
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Save Expense")
+                }
+            }
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = ScreenPadding, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            FinanceHeroCard(modifier = Modifier.fillMaxWidth()) {
+                FinanceSectionHeader(
+                    title = "Spending snapshot",
+                    subtitle = "Log the amount, category, and payment source in one pass"
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Preview amount",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = formatCurrency(amount.toDoubleOrNull() ?: 0.0),
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                    }
+                    OutlinedCard(onClick = { datePickerDialog.show() }) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CalendarToday, contentDescription = null)
+                            Text(date.format(DateTimeFormatter.ofPattern("dd MMM yyyy")))
+                        }
+                    }
+                }
+            }
+
+            FormSectionCard(
+                title = "Core details",
+                subtitle = "Start with the amount and category"
+            ) {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } },
+                    label = { Text("Amount (₹)") },
+                    leadingIcon = { Text("₹", style = MaterialTheme.typography.titleMedium) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                ExposedDropdownMenuBox(
+                    expanded = categoryExpanded,
+                    onExpandedChange = { categoryExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedCategory,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        placeholder = { Text("Choose a category") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = categoryExpanded,
+                        onDismissRequest = { categoryExpanded = false }
+                    ) {
+                        uiState.categoryState.categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = {
+                                    selectedCategory = category.name
+                                    categoryExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = subcategory,
+                    onValueChange = { subcategory = it },
+                    label = { Text("Subcategory") },
+                    placeholder = { Text("Optional detail like dining or fuel") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            FormSectionCard(
+                title = "Context",
+                subtitle = "Add notes and payment information"
+            ) {
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    placeholder = { Text("What was this expense for?") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                ExposedDropdownMenuBox(
+                    expanded = paymentExpanded,
+                    onExpandedChange = { paymentExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = paymentMethod,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Payment Method") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = paymentExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = paymentExpanded,
+                        onDismissRequest = { paymentExpanded = false }
+                    ) {
+                        paymentMethods.forEach { method ->
+                            DropdownMenuItem(
+                                text = { Text(method) },
+                                onClick = {
+                                    paymentMethod = method
+                                    paymentExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Tags") },
+                    placeholder = { Text("Optional tags, comma separated") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
 
-// Helper for dropdowns (simplified version)
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExposedDropdownMenuBox(
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
+private fun FormSectionCard(
+    title: String,
+    subtitle: String,
     content: @Composable () -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
+    Card(
+        shape = CardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
     ) {
-        content()
+        Column(modifier = Modifier.padding(18.dp)) {
+            FinanceSectionHeader(title = title, subtitle = subtitle)
+            Spacer(modifier = Modifier.height(18.dp))
+            content()
+        }
     }
 }
