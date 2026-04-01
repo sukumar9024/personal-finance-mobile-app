@@ -1,0 +1,96 @@
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+captures/
+.output/
+
+# Gradle files
+.gradle/
+build/
+local.properties
+gradle-app.setting
+
+# Proguard folder
+proguard/
+
+# Android Studio Navigation editor temp files
+.navigation/
+
+# Android Studio captures folder
+captures/
+
+# IntelliJ IDEA
+*.iml
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/assetWizardSettings.xml
+.idea/dictionaries
+.idea/libraries
+.idea/caches
+.idea/modules.xml
+.idea/.name
+.idea/compiler.xml
+.idea/copyright/profiles_settings.xml
+.idea/encodings.xml
+.idea/misc.xml
+.idea/vcs.xml
+
+# Keystore files
+*.jks
+*.keystore
+
+# External native build folder generated in Android Studio 2.2 and later
+.externalNativeBuild
+
+# Google Services (google-services.json)
+google-services.json
+
+# Firebase (google-services.json)
+firebase-debug.log
+
+# Serialized cache
+.serialized_cache
+
+# Filesystem local caches
+.cxx/
+.cxx/
+
+# Sensitive configuration files - DO NOT COMMIT
+# Service account keys contain private credentials
+**/service-account-key.json
+**/credentials.json
+**/key.json
+secrets.properties
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Local configuration
+app/src/main/assets/service-account-key.json
+
+# BuildConfig generated values (may contain sensitive data in some setups)
+app/build/
+
+# Test outputs
+app/src/androidTest/res/
+app/src/test/res/
