@@ -406,31 +406,21 @@ private fun QuickActionsRow(
     onCategoriesClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        modifier = Modifier.size(40.dp)
     ) {
-        QuickActionCard(
-            title = "Reports",
-            subtitle = "Analytics",
-            icon = Icons.Default.Analytics,
-            onClick = onReportsClick,
-            modifier = Modifier.weight(1f)
-        )
-        QuickActionCard(
-            title = "Categories",
-            subtitle = "Manage",
-            icon = Icons.Default.Category,
-            onClick = onCategoriesClick,
-            modifier = Modifier.weight(1f)
-        )
-        QuickActionCard(
-            title = "Settings",
-            subtitle = "Setup",
-            icon = Icons.Default.Settings,
-            onClick = onSettingsClick,
-            modifier = Modifier.weight(1f)
-        )
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(40.dp)
+        ) {
+            Icon(
+                icon, 
+                contentDescription = contentDescription,
+                modifier = Modifier.size(20.dp)
+            )
+        }
     }
 }
 
@@ -444,26 +434,29 @@ private fun QuickActionCard(
 ) {
     Card(
         modifier = modifier.clickable(onClick = onClick),
-        shape = Shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+        shape = CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(Spacing.md),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(Spacing.xs)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(24.dp)
-            )
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
             Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
+                text = title, 
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
             Text(

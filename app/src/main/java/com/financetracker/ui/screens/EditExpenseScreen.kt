@@ -426,31 +426,23 @@ fun EditExpenseScreen(
             }
         }
     }
+}
 
-    if (showDeleteDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Delete Expense") },
-            text = { Text("Are you sure you want to delete this expense? This action cannot be undone.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteExpense(expense.id)
-                        showDeleteDialog = false
-                        onNavigateBack()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
+@Composable
+private fun EditSectionCard(
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit
+) {
+    Card(
+        shape = CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            Spacer(modifier = Modifier.height(20.dp))
+            content()
+        }
     }
 }

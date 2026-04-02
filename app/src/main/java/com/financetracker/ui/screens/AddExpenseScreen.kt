@@ -433,27 +433,44 @@ fun InputSection(
     subtitle: String,
     content: @Composable () -> Unit
 ) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = Shapes.large,
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.dp
+    Card(
+        shape = CardShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(Spacing.lg)
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(Spacing.md))
+        Column(modifier = Modifier.padding(20.dp)) {
+            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            Spacer(modifier = Modifier.height(20.dp))
             content()
         }
     }
+}
+
+@Composable
+private fun EnhancedTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String = "",
+    leadingIcon: @Composable (() -> Unit)? = null,
+    singleLine: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = { Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        leadingIcon = leadingIcon,
+        singleLine = singleLine,
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+            focusedLabelColor = MaterialTheme.colorScheme.primary
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
 }

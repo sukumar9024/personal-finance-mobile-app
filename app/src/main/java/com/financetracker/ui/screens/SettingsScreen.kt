@@ -265,95 +265,14 @@ private fun StatusCard(
     categoryCount: Int
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = Shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
-        )
+        shape = CardShape,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(Spacing.lg)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Workspace Status",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Ready & Active",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Surface(
-                    shape = Shapes.medium,
-                    color = MaterialTheme.colorScheme.primary
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(Spacing.sm)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.md))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-            ) {
-                StatusMetric(
-                    label = "Entries",
-                    value = entryCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                StatusMetric(
-                    label = "Categories",
-                    value = categoryCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(Spacing.sm))
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = Shapes.medium,
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(Spacing.md),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text(
-                            text = "Current Month",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = currentMonthSheet.ifBlank { "Not set" },
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    Text(
-                        text = formatCurrency(totalAmount),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
+        Column(modifier = Modifier.padding(20.dp)) {
+            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            Spacer(modifier = Modifier.height(20.dp))
+            content()
         }
     }
 }
