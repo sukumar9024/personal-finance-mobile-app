@@ -16,100 +16,187 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
-val Emerald = Color(0xFF34D399)
-val EmeraldMuted = Color(0xFF99F6E4)
-val Sky = Color(0xFF7DD3FC)
-val Amber = Color(0xFFF59E0B)
-val Rose = Color(0xFFFB7185)
-val Slate950 = Color(0xFF09111F)
-val Slate900 = Color(0xFF0F172A)
-val Slate850 = Color(0xFF152033)
-val Slate800 = Color(0xFF1C2940)
-val Slate700 = Color(0xFF2A3954)
-val Slate200 = Color(0xFFD7E1F0)
-val Slate100 = Color(0xFFF3F7FB)
-val TextStrong = Color(0xFFE8EEF8)
-val TextMuted = Color(0xFFA8B7CE)
-val Purple40 = Emerald
+// Primary Colors
+val PrimaryGreen = Color(0xFF10B981)
+val PrimaryGreenDark = Color(0xFF059669)
+val PrimaryGreenLight = Color(0xFF34D399)
+
+// Secondary Colors
+val SecondaryBlue = Color(0xFF3B82F6)
+val SecondaryBlueDark = Color(0xFF2563EB)
+val SecondaryBlueLight = Color(0xFF60A5FA)
+
+// Accent Colors
+val AccentAmber = Color(0xFFF59E0B)
+val AccentPurple = Color(0xFF8B5CF6)
+val AccentRose = Color(0xFFF43F5E)
+val AccentTeal = Color(0xFF14B8A6)
+val AccentIndigo = Color(0xFF6366F1)
+
+// Neutral Colors - Dark Theme
+val DarkBackground = Color(0xFF0F172A)
+val DarkSurface = Color(0xFF1E293B)
+val DarkSurfaceVariant = Color(0xFF334155)
+val DarkSurfaceElevated = Color(0xFF253044)
+val DarkOnBackground = Color(0xFFF1F5F9)
+val DarkOnSurface = Color(0xFFE2E8F0)
+val DarkOnSurfaceVariant = Color(0xFF94A3B8)
+val DarkOutline = Color(0xFF475569)
+val DarkOutlineVariant = Color(0xFF334155)
+
+// Neutral Colors - Light Theme
+val LightBackground = Color(0xFFF8FAFC)
+val LightSurface = Color(0xFFFFFFFF)
+val LightSurfaceVariant = Color(0xFFF1F5F9)
+val LightSurfaceElevated = Color(0xFFFFFFFF)
+val LightOnBackground = Color(0xFF0F172A)
+val LightOnSurface = Color(0xFF1E293B)
+val LightOnSurfaceVariant = Color(0xFF64748B)
+val LightOutline = Color(0xFFE2E8F0)
+val LightOutlineVariant = Color(0xFFF1F5F9)
+
+// Semantic Colors
+val SuccessGreen = Color(0xFF22C55E)
+val WarningAmber = Color(0xFFF59E0B)
+val ErrorRed = Color(0xFFEF4444)
+val InfoBlue = Color(0xFF3B82F6)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Emerald,
-    onPrimary = Slate950,
-    primaryContainer = Color(0xFF12372D),
-    onPrimaryContainer = EmeraldMuted,
-    secondary = Sky,
-    onSecondary = Slate950,
-    tertiary = Amber,
-    onTertiary = Slate950,
-    error = Rose,
-    background = Slate900,
-    onBackground = TextStrong,
-    surface = Slate850,
-    onSurface = TextStrong,
-    surfaceVariant = Slate800,
-    onSurfaceVariant = TextMuted,
-    outline = Color(0xFF4A5D7E)
+    primary = PrimaryGreen,
+    onPrimary = Color.White,
+    primaryContainer = PrimaryGreenDark,
+    onPrimaryContainer = Color(0xFFD1FAE5),
+    secondary = SecondaryBlue,
+    onSecondary = Color.White,
+    secondaryContainer = SecondaryBlueDark,
+    onSecondaryContainer = Color(0xFFDBEAFE),
+    tertiary = AccentPurple,
+    onTertiary = Color.White,
+    error = ErrorRed,
+    onError = Color.White,
+    background = DarkBackground,
+    onBackground = DarkOnBackground,
+    surface = DarkSurface,
+    onSurface = DarkOnSurface,
+    surfaceVariant = DarkSurfaceVariant,
+    onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = DarkOutline,
+    outlineVariant = DarkOutlineVariant,
+    inverseSurface = DarkOnBackground,
+    inverseOnSurface = DarkSurface
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF0F9F76),
+    primary = PrimaryGreen,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFD8FAEF),
-    onPrimaryContainer = Color(0xFF053126),
-    secondary = Color(0xFF2563EB),
+    primaryContainer = Color(0xFFD1FAE5),
+    onPrimaryContainer = Color(0xFF064E3B),
+    secondary = SecondaryBlue,
     onSecondary = Color.White,
-    tertiary = Color(0xFFB7791F),
+    secondaryContainer = Color(0xFFDBEAFE),
+    onSecondaryContainer = Color(0xFF1E3A5F),
+    tertiary = AccentPurple,
     onTertiary = Color.White,
-    error = Color(0xFFDC2626),
-    background = Slate100,
-    onBackground = Color(0xFF111827),
-    surface = Color.White,
-    onSurface = Color(0xFF111827),
-    surfaceVariant = Color(0xFFE7EEF8),
-    onSurfaceVariant = Color(0xFF5B6B83),
-    outline = Color(0xFFC7D3E4)
+    tertiaryContainer = Color(0xFFEDE9FE),
+    onTertiaryContainer = Color(0xFF4C1D95),
+    error = ErrorRed,
+    onError = Color.White,
+    background = LightBackground,
+    onBackground = LightOnBackground,
+    surface = LightSurface,
+    onSurface = LightOnSurface,
+    surfaceVariant = LightSurfaceVariant,
+    onSurfaceVariant = LightOnSurfaceVariant,
+    outline = LightOutline,
+    outlineVariant = LightOutlineVariant,
+    inverseSurface = LightOnBackground,
+    inverseOnSurface = LightSurface
 )
 
-private val FinanceTypography = Typography(
+val appTypography = Typography(
+    displayLarge = TextStyle(
+        fontSize = 57.sp,
+        lineHeight = 64.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = (-0.25).sp
+    ),
+    displayMedium = TextStyle(
+        fontSize = 45.sp,
+        lineHeight = 52.sp,
+        fontWeight = FontWeight.Normal
+    ),
+    displaySmall = TextStyle(
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
+        fontWeight = FontWeight.Normal
+    ),
+    headlineLarge = TextStyle(
+        fontSize = 32.sp,
+        lineHeight = 40.sp,
+        fontWeight = FontWeight.SemiBold
+    ),
     headlineMedium = TextStyle(
-        fontSize = 30.sp,
+        fontSize = 28.sp,
         lineHeight = 36.sp,
-        fontWeight = FontWeight.Bold
+        fontWeight = FontWeight.SemiBold
     ),
     headlineSmall = TextStyle(
         fontSize = 24.sp,
-        lineHeight = 30.sp,
-        fontWeight = FontWeight.Bold
+        lineHeight = 32.sp,
+        fontWeight = FontWeight.SemiBold
     ),
     titleLarge = TextStyle(
-        fontSize = 20.sp,
-        lineHeight = 26.sp,
+        fontSize = 22.sp,
+        lineHeight = 28.sp,
         fontWeight = FontWeight.SemiBold
     ),
     titleMedium = TextStyle(
-        fontSize = 18.sp,
+        fontSize = 16.sp,
         lineHeight = 24.sp,
-        fontWeight = FontWeight.SemiBold
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.15.sp
     ),
     titleSmall = TextStyle(
-        fontSize = 15.sp,
+        fontSize = 14.sp,
         lineHeight = 20.sp,
-        fontWeight = FontWeight.SemiBold
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.1.sp
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        fontWeight = FontWeight.Normal
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.5.sp
     ),
     bodyMedium = TextStyle(
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        fontWeight = FontWeight.Normal
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.25.sp
+    ),
+    bodySmall = TextStyle(
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.4.sp
     ),
     labelLarge = TextStyle(
-        fontSize = 13.sp,
-        lineHeight = 18.sp,
-        fontWeight = FontWeight.Medium
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.1.sp
+    ),
+    labelMedium = TextStyle(
+        fontSize = 12.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.5.sp
+    ),
+    labelSmall = TextStyle(
+        fontSize = 11.sp,
+        lineHeight = 16.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.5.sp
     )
 )
 
@@ -128,14 +215,16 @@ fun FinanceTrackerTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
+            window.statusBarColor = Color.Transparent.toArgb()
+            window.navigationBarColor = Color.Transparent.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
         }
     }
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = FinanceTypography,
+        typography = appTypography,
         content = content
     )
 }
