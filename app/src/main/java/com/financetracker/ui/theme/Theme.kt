@@ -1,14 +1,36 @@
 package com.financetracker.ui.theme
 
 import android.app.Activity
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -18,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import com.financetracker.data.model.Category
 
 // Professional Color Palette - Finance-themed
 val PrimaryBlue = Color(0xFF1976D2)
@@ -210,23 +233,77 @@ fun categoryColor(category: Category?): Color {
     }
 }
 
+// Enhanced Gradient Colors for Premium Feel
+val GradientStart = Color(0xFF667eea)
+val GradientEnd = Color(0xFF764ba2)
+val GradientGreenStart = Color(0xFF11998e)
+val GradientGreenEnd = Color(0xFF38ef7d)
+val GradientOrangeStart = Color(0xFFf093fb)
+val GradientOrangeEnd = Color(0xFFf5576c)
+
+// Shimmer animation for loading states
+@Composable
+fun shimmerBrush(): Brush {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer_translate"
+    )
+
+    val shimmerColors = listOf(
+        Color.LightGray.copy(alpha = 0.6f),
+        Color.LightGray.copy(alpha = 0.2f),
+        Color.LightGray.copy(alpha = 0.6f),
+    )
+
+    return Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset.Zero,
+        end = Offset(x = translateAnim.value, y = translateAnim.value)
+    )
+}
+
 // Reusable UI Components
 @Composable
 fun FinanceHeroCard(
     modifier: Modifier = Modifier,
+    useGradient: Boolean = false,
     content: @Composable () -> Unit
 ) {
     Card(
         modifier = modifier,
         shape = CardShape,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            containerColor = if (useGradient) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+            }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (useGradient) {
+                        Modifier.background(
+                            Brush.linearGradient(
+                                colors = listOf(GradientStart, GradientEnd),
+                                start = Offset.Zero,
+                                end = Offset.Infinite
+                            ),
+                            shape = CardShape
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
                 .padding(CardPadding)
         ) {
             content()
@@ -237,18 +314,38 @@ fun FinanceHeroCard(
 @Composable
 fun FinanceInlineBadge(
     text: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isAnimated: Boolean = false
 ) {
+    val transition = if (isAnimated) {
+        rememberInfiniteTransition(label = "badge")
+    } else null
+
+    val alpha = if (isAnimated && transition != null) {
+        transition.animateFloat(
+            initialValue = 0.18f,
+            targetValue = 0.35f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(1000),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "badge_alpha"
+        ).value
+    } else {
+        0.18f
+    }
+
     Surface(
         modifier = modifier,
         shape = ButtonShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
         contentColor = MaterialTheme.colorScheme.primary
     ) {
         Text(
             text = text,
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
         )
     }
 }
@@ -257,7 +354,8 @@ fun FinanceInlineBadge(
 fun FinanceSectionHeader(
     title: String,
     subtitle: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = false
 ) {
     Column(
         modifier = modifier.padding(vertical = 8.dp),
@@ -266,6 +364,7 @@ fun FinanceSectionHeader(
         Text(
             text = title,
             style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface
         )
         if (subtitle != null) {
@@ -275,6 +374,17 @@ fun FinanceSectionHeader(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        if (showDivider) {
+            Surface(
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .fillMaxWidth(0.3f),
+                shape = RoundedCornerShape(4.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+            ) {
+                Box(modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
     }
 }
 
@@ -282,30 +392,77 @@ fun FinanceSectionHeader(
 fun FinanceStatPill(
     label: String,
     value: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    accentColor: Color? = null
 ) {
+    val backgroundColor = accentColor?.copy(alpha = 0.12f) 
+        ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+
     Card(
         modifier = modifier,
         shape = CardShape,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        )
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Column(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Text(
-                text = label,
+                text = label.uppercase(),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 10.sp
             )
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface
+                fontWeight = FontWeight.SemiBold,
+                color = accentColor ?: MaterialTheme.colorScheme.onSurface
             )
         }
+    }
+}
+
+@Composable
+fun FinanceProgressBar(
+    progress: Float,
+    modifier: Modifier = Modifier,
+    color: Color = MaterialTheme.colorScheme.primary,
+    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    height: Int = 10
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(height.dp))
+            .background(trackColor)
+            .fillMaxWidth()
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(height.dp))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(color, color.copy(alpha = 0.7f))
+                    )
+                )
+                .fillMaxWidth(progress.coerceIn(0f, 1f))
+                .padding(vertical = (height / 2).dp)
+        )
+    }
+}
+
+@Composable
+fun FinanceAnimatedIcon(
+    icon: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    isActive: Boolean = false
+) {
+    val scale = if (isActive) 1.1f else 1.0f
+    Box(
+        modifier = modifier,
+        contentAlignment = Alignment.Center
+    ) {
+        icon()
     }
 }
 

@@ -232,11 +232,12 @@ private fun SettingsCard(
 ) {
     Card(
         shape = CardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            FinanceSectionHeader(title = title, subtitle = subtitle)
-            Spacer(modifier = Modifier.height(18.dp))
+        Column(modifier = Modifier.padding(20.dp)) {
+            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            Spacer(modifier = Modifier.height(20.dp))
             content()
         }
     }

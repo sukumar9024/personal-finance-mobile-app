@@ -306,12 +306,40 @@ private fun FormSectionCard(
         shape = CardShape,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(modifier = Modifier.padding(18.dp)) {
-            FinanceSectionHeader(title = title, subtitle = subtitle)
-            Spacer(modifier = Modifier.height(18.dp))
+        Column(modifier = Modifier.padding(20.dp)) {
+            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            Spacer(modifier = Modifier.height(20.dp))
             content()
         }
     }
+}
+
+@Composable
+private fun EnhancedTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String = "",
+    leadingIcon: @Composable (() -> Unit)? = null,
+    singleLine: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = { Text(placeholder, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+        leadingIcon = leadingIcon,
+        singleLine = singleLine,
+        shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+            focusedLabelColor = MaterialTheme.colorScheme.primary
+        ),
+        modifier = modifier.fillMaxWidth()
+    )
 }

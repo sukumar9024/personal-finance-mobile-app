@@ -305,10 +305,18 @@ private fun TopBarAction(
 ) {
     Surface(
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        modifier = Modifier.size(40.dp)
     ) {
-        IconButton(onClick = onClick) {
-            Icon(icon, contentDescription = contentDescription)
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(40.dp)
+        ) {
+            Icon(
+                icon, 
+                contentDescription = contentDescription,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -324,24 +332,30 @@ private fun QuickActionCard(
     Card(
         modifier = modifier.clickable(onClick = onClick),
         shape = CardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                modifier = Modifier.size(48.dp)
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(10.dp)
+                    modifier = Modifier.padding(12.dp)
                 )
             }
-            Text(text = title, style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = title, 
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
             Text(
                 text = subtitle,
                 style = MaterialTheme.typography.bodySmall,
