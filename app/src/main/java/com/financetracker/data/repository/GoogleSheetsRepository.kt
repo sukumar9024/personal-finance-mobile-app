@@ -10,18 +10,20 @@ import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.TransactionType
 import com.financetracker.ui.theme.ThemeMode
-import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.sheets.v4.Sheets
 import com.google.api.services.sheets.v4.SheetsScopes
 import com.google.api.services.sheets.v4.model.AddSheetRequest
 import com.google.api.services.sheets.v4.model.BatchUpdateSpreadsheetRequest
+import com.google.api.services.sheets.v4.model.ClearValuesRequest
 import com.google.api.services.sheets.v4.model.DeleteDimensionRequest
 import com.google.api.services.sheets.v4.model.DimensionRange
 import com.google.api.services.sheets.v4.model.Request
 import com.google.api.services.sheets.v4.model.SheetProperties
 import com.google.api.services.sheets.v4.model.ValueRange
+import com.google.auth.http.HttpCredentialsAdapter
+import com.google.auth.oauth2.GoogleCredentials
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -32,6 +34,7 @@ import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
+import java.util.Locale
 
 class GoogleSheetsRepository(private val context: Context) {
     companion object {
@@ -39,6 +42,7 @@ class GoogleSheetsRepository(private val context: Context) {
         private const val INCOME_SHEET = "monthly_income"
         private const val RECURRING_SHEET = "recurring_entries"
         private const val SERVICE_ACCOUNT_ASSET = "service-account-key.json"
+        private const val PLACEHOLDER_SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_HERE"
         private const val CACHE_PREFS = "finance_tracker_cache"
         private const val CACHE_KEY = "cached_finance_data"
         private const val LAST_SYNC_ATTEMPT_KEY = "last_sync_attempt"
@@ -119,7 +123,10 @@ class GoogleSheetsRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences(CACHE_PREFS, Context.MODE_PRIVATE)
     private val transport = NetHttpTransport()
     private val jsonFactory = GsonFactory.getDefaultInstance()
-    private val spreadsheetId = BuildConfig.SPREADSHEET_ID.trim()
+    private val spreadsheetId = BuildConfig.SPREADSHEET_ID
+        .trim()
+        .takeUnless { it.equals(PLACEHOLDER_SPREADSHEET_ID, ignoreCase = true) }
+        .orEmpty()
 
     @Volatile
     private var sheetsService: Sheets? = null
@@ -129,7 +136,7 @@ class GoogleSheetsRepository(private val context: Context) {
 
     fun getCurrentMonthSheetName(): String {
         val now = LocalDate.now()
-        return "expenses_${now.year}_${String.format("%02d", now.monthValue)}"
+        return "expenses_${now.year}_${String.format(Locale.US, "%02d", now.monthValue)}"
     }
 
     fun isReadyForLiveSync(): Boolean {
@@ -138,7 +145,7 @@ class GoogleSheetsRepository(private val context: Context) {
 
     fun getConfigurationStatusMessage(): String? {
         return when {
-            spreadsheetId.isBlank() -> "Spreadsheet ID is missing in build.gradle.kts."
+            spreadsheetId.isBlank() -> "Spreadsheet ID is missing in local.properties (key: spreadsheet.id)."
             !hasCredentials() -> "Spreadsheet ID is set, but service-account-key.json is missing in app/src/main/assets."
             else -> null
         }
@@ -231,12 +238,13 @@ class GoogleSheetsRepository(private val context: Context) {
     suspend fun updateExpense(sheetName: String, expense: Expense): Boolean = withContext(Dispatchers.IO) {
         val service = getSheetsService() ?: return@withContext false
         if (expense.sheetRowIndex <= 1) return@withContext false
+        ensureExpenseSheet(service, sheetName)
 
         service.spreadsheets().values()
             .update(
                 spreadsheetId,
                 "$sheetName!A${expense.sheetRowIndex}:P${expense.sheetRowIndex}",
-                ValueRange().setValues(listOf(expense.toSheetRow()))
+                ValueRange().setValues(listOf(expense.toSheetRow(LocalDateTime.now())))
             )
             .setValueInputOption("RAW")
             .execute()
@@ -316,7 +324,7 @@ class GoogleSheetsRepository(private val context: Context) {
         true
     }
 
-    suspend fun updateCategoryBudget(categoryName: String, monthlyBudget: Double?): Boolean = withContext(Dispatchers.IO) {
+    suspend fun updateCategoryBudget(category: Category): Boolean = withContext(Dispatchers.IO) {
         val service = getSheetsService() ?: return@withContext false
         ensureCategoriesSheet(service)
 
@@ -326,27 +334,43 @@ class GoogleSheetsRepository(private val context: Context) {
             .getValues()
             .orEmpty()
 
-        val index = rows.indexOfFirst { row -> row.valueAt(0).equals(categoryName, ignoreCase = true) }
-        if (index == -1) return@withContext false
+        val sanitizedColor = category.color.ifBlank { "#607D8B" }
+        val categoryRow = listOf(
+            category.name,
+            sanitizedColor,
+            category.monthlyBudget?.toString().orEmpty()
+        )
+        val index = rows.indexOfFirst { row -> row.valueAt(0).equals(category.name, ignoreCase = true) }
 
-        val rowNumber = index + 2
-        val existing = rows[index]
-        service.spreadsheets().values()
-            .update(
-                spreadsheetId,
-                "$CATEGORIES_SHEET!A$rowNumber:C$rowNumber",
-                ValueRange().setValues(
-                    listOf(
+        if (index >= 0) {
+            val rowNumber = index + 2
+            val existing = rows[index]
+            service.spreadsheets().values()
+                .update(
+                    spreadsheetId,
+                    "$CATEGORIES_SHEET!A$rowNumber:C$rowNumber",
+                    ValueRange().setValues(
                         listOf(
-                            existing.valueAt(0),
-                            existing.valueAt(1),
-                            monthlyBudget?.toString().orEmpty()
+                            listOf(
+                                existing.valueAt(0).ifBlank { category.name },
+                                existing.valueAt(1).ifBlank { sanitizedColor },
+                                category.monthlyBudget?.toString().orEmpty()
+                            )
                         )
                     )
                 )
-            )
-            .setValueInputOption("RAW")
-            .execute()
+                .setValueInputOption("RAW")
+                .execute()
+        } else {
+            service.spreadsheets().values()
+                .append(
+                    spreadsheetId,
+                    "$CATEGORIES_SHEET!A:C",
+                    ValueRange().setValues(listOf(categoryRow))
+                )
+                .setValueInputOption("RAW")
+                .execute()
+        }
 
         true
     }
@@ -356,6 +380,7 @@ class GoogleSheetsRepository(private val context: Context) {
 
         getExpenseSheetTitles(service)
             .flatMap { sheetName ->
+                ensureExpenseSheet(service, sheetName)
                 readExpensesFromSheet(service, sheetName, includeSheetPrefix = true)
             }
             .sortedWith(compareByDescending<Expense> { it.date }.thenByDescending { it.modifiedAt })
@@ -497,7 +522,10 @@ class GoogleSheetsRepository(private val context: Context) {
 
         val refreshedExpenses = readExpensesFromSheet(service, currentSheet)
         val refreshedReportExpenses = getExpenseSheetTitles(service)
-            .flatMap { sheetName -> readExpensesFromSheet(service, sheetName, includeSheetPrefix = true) }
+            .flatMap { sheetName ->
+                ensureExpenseSheet(service, sheetName)
+                readExpensesFromSheet(service, sheetName, includeSheetPrefix = true)
+            }
             .sortedWith(compareByDescending<Expense> { it.date }.thenByDescending { it.modifiedAt })
         val refreshedIncomeEntries = fetchIncomeEntries(service)
 
@@ -563,14 +591,14 @@ class GoogleSheetsRepository(private val context: Context) {
             val credentialStream = openCredentialStream() ?: return null
 
             credentialStream.use { input ->
-                val credential = GoogleCredential.fromStream(input, transport, jsonFactory)
-                val scopedCredential = if (credential.createScopedRequired()) {
-                    credential.createScoped(listOf(SheetsScopes.SPREADSHEETS))
+                val credentials = GoogleCredentials.fromStream(input)
+                val scopedCredentials = if (credentials.createScopedRequired()) {
+                    credentials.createScoped(listOf(SheetsScopes.SPREADSHEETS))
                 } else {
-                    credential
+                    credentials
                 }
 
-                return Sheets.Builder(transport, jsonFactory, scopedCredential)
+                return Sheets.Builder(transport, jsonFactory, HttpCredentialsAdapter(scopedCredentials))
                     .setApplicationName("FinanceTracker")
                     .build()
                     .also { sheetsService = it }
@@ -600,7 +628,9 @@ class GoogleSheetsRepository(private val context: Context) {
     }
 
     private fun ensureExpenseSheet(service: Sheets, sheetName: String): SheetProperties {
-        return ensureSheetExists(service, sheetName, EXPENSE_HEADERS)
+        return ensureSheetExists(service, sheetName, EXPENSE_HEADERS).also {
+            normalizeExpenseSheet(service, sheetName)
+        }
     }
 
     private fun ensureCategoriesSheet(service: Sheets): SheetProperties {
@@ -765,6 +795,59 @@ class GoogleSheetsRepository(private val context: Context) {
             .execute()
     }
 
+    private fun normalizeExpenseSheet(service: Sheets, sheetName: String) {
+        val values = service.spreadsheets().values()
+            .get(spreadsheetId, "$sheetName!A1:Z")
+            .execute()
+            .getValues()
+            .orEmpty()
+
+        if (values.isEmpty()) {
+            service.spreadsheets().values()
+                .update(spreadsheetId, "$sheetName!A1:P1", ValueRange().setValues(listOf(EXPENSE_HEADERS)))
+                .setValueInputOption("RAW")
+                .execute()
+            return
+        }
+
+        val headerRow = values.first().map { it.toString() }
+        val dataRows = values.drop(1)
+        val headerIndexes = buildExpenseHeaderIndexes(headerRow)
+        val needsNormalization = headerRow != EXPENSE_HEADERS ||
+            values.any { row -> row.size > EXPENSE_HEADERS.size } ||
+            headerIndexes.isNotEmpty() && !headerIndexes.keys.containsAll(CURRENT_EXPENSE_HEADER_KEYS)
+
+        if (!needsNormalization) {
+            return
+        }
+
+        val normalizedRows = dataRows.mapIndexedNotNull { index, row ->
+            val expense = parseExpenseRow(
+                row = row,
+                rowIndex = index + 2,
+                sheetName = sheetName,
+                includeSheetPrefix = false,
+                headerIndexes = headerIndexes
+            ) ?: return@mapIndexedNotNull null
+
+            expense.toSheetRow(expense.modifiedAt)
+        }
+
+        service.spreadsheets().values()
+            .clear(spreadsheetId, "$sheetName!A:Z", ClearValuesRequest())
+            .execute()
+
+        val rewrittenValues = buildList {
+            add(EXPENSE_HEADERS)
+            addAll(normalizedRows)
+        }
+
+        service.spreadsheets().values()
+            .update(spreadsheetId, "$sheetName!A1:P", ValueRange().setValues(rewrittenValues))
+            .setValueInputOption("RAW")
+            .execute()
+    }
+
     private fun readExpensesFromSheet(
         service: Sheets,
         sheetName: String,
@@ -776,10 +859,58 @@ class GoogleSheetsRepository(private val context: Context) {
             .getValues()
             .orEmpty()
 
-        return values.mapIndexed { index, row ->
-            val rowIndex = index + 2
-            when {
-                row.size >= 16 -> Expense(
+        return values.mapIndexedNotNull { index, row ->
+            parseExpenseRow(
+                row = row,
+                rowIndex = index + 2,
+                sheetName = sheetName,
+                includeSheetPrefix = includeSheetPrefix
+            )
+        }
+    }
+
+    private fun isEmptyExpenseRow(row: List<*>): Boolean {
+        val amount = row.valueAt(1).toDoubleOrNull()
+        val transactionType = row.valueAt(8).ifBlank { row.valueAt(7) }
+        return row.valueAt(0).isBlank() &&
+            amount == null &&
+            row.valueAt(2).isBlank() &&
+            row.valueAt(4).isBlank() &&
+            row.valueAt(5).isBlank() &&
+            transactionType.isBlank()
+    }
+
+    private fun isCurrentExpenseSchema(row: List<*>): Boolean {
+        return row.size >= 16 || looksLikeTransactionType(row.valueAt(8))
+    }
+
+    private fun isIntermediateExpenseSchema(row: List<*>): Boolean {
+        return row.size >= 15 || looksLikeTransactionType(row.valueAt(7))
+    }
+
+    private fun looksLikeTransactionType(value: String): Boolean {
+        return TransactionType.entries.any { it.name == value }
+    }
+
+    private fun parseExpenseRow(
+        row: List<*>,
+        rowIndex: Int,
+        sheetName: String,
+        includeSheetPrefix: Boolean,
+        headerIndexes: Map<String, Int> = emptyMap()
+    ): Expense? {
+        if (isEmptyExpenseRow(row)) return null
+
+        val headerMappedExpense = parseExpenseRowUsingHeaders(
+            row = row,
+            rowIndex = rowIndex,
+            sheetName = sheetName,
+            includeSheetPrefix = includeSheetPrefix,
+            headerIndexes = headerIndexes
+        )
+
+        return headerMappedExpense ?: when {
+            isCurrentExpenseSchema(row) -> Expense(
                 id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
                 date = parseDate(row.valueAt(0)),
                 amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
@@ -801,60 +932,136 @@ class GoogleSheetsRepository(private val context: Context) {
                 recurringEntryId = row.valueAt(14).ifBlank { null },
                 occurrencePeriod = row.valueAt(15).ifBlank { null },
                 sheetRowIndex = rowIndex
-                )
+            )
 
-                row.size >= 15 -> Expense(
-                    id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
-                    date = parseDate(row.valueAt(0)),
-                    amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
-                    category = row.valueAt(2),
-                    subcategory = row.valueAt(3).ifBlank { null },
-                    description = row.valueAt(4),
-                    paymentMethod = row.valueAt(5).ifBlank { "Cash" },
-                    transferAccount = row.valueAt(6).ifBlank { null },
-                    transferDestinationAccount = null,
-                    transactionType = parseTransactionType(row.valueAt(7)),
-                    splitGroupId = row.valueAt(8).ifBlank { null },
-                    receiptUrl = row.valueAt(9).ifBlank { null },
-                    tags = row.valueAt(10)
-                        .split(",")
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() },
-                    createdAt = parseDateTime(row.valueAt(11)),
-                    modifiedAt = parseDateTime(row.valueAt(12)),
-                    recurringEntryId = row.valueAt(13).ifBlank { null },
-                    occurrencePeriod = row.valueAt(14).ifBlank { null },
-                    sheetRowIndex = rowIndex
-                )
+            isIntermediateExpenseSchema(row) -> Expense(
+                id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
+                date = parseDate(row.valueAt(0)),
+                amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
+                category = row.valueAt(2),
+                subcategory = row.valueAt(3).ifBlank { null },
+                description = row.valueAt(4),
+                paymentMethod = row.valueAt(5).ifBlank { "Cash" },
+                transferAccount = row.valueAt(6).ifBlank { null },
+                transferDestinationAccount = null,
+                transactionType = parseTransactionType(row.valueAt(7)),
+                splitGroupId = row.valueAt(8).ifBlank { null },
+                receiptUrl = row.valueAt(9).ifBlank { null },
+                tags = row.valueAt(10)
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() },
+                createdAt = parseDateTime(row.valueAt(11)),
+                modifiedAt = parseDateTime(row.valueAt(12)),
+                recurringEntryId = row.valueAt(13).ifBlank { null },
+                occurrencePeriod = row.valueAt(14).ifBlank { null },
+                sheetRowIndex = rowIndex
+            )
 
-                else -> Expense(
-                    id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
-                    date = parseDate(row.valueAt(0)),
-                    amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
-                    category = row.valueAt(2),
-                    subcategory = row.valueAt(3).ifBlank { null },
-                    description = row.valueAt(4),
-                    paymentMethod = row.valueAt(5).ifBlank { "Cash" },
-                    transferAccount = null,
-                    transferDestinationAccount = null,
-                    transactionType = TransactionType.EXPENSE,
-                    splitGroupId = null,
-                    receiptUrl = row.valueAt(6).ifBlank { null },
-                    tags = row.valueAt(7)
-                        .split(",")
-                        .map { it.trim() }
-                        .filter { it.isNotBlank() },
-                    createdAt = parseDateTime(row.valueAt(8)),
-                    modifiedAt = parseDateTime(row.valueAt(9)),
-                    recurringEntryId = row.valueAt(10).ifBlank { null },
-                    occurrencePeriod = row.valueAt(11).ifBlank { null },
-                    sheetRowIndex = rowIndex
-                )
-            }
+            else -> Expense(
+                id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
+                date = parseDate(row.valueAt(0)),
+                amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
+                category = row.valueAt(2),
+                subcategory = row.valueAt(3).ifBlank { null },
+                description = row.valueAt(4),
+                paymentMethod = row.valueAt(5).ifBlank { "Cash" },
+                transferAccount = null,
+                transferDestinationAccount = null,
+                transactionType = TransactionType.EXPENSE,
+                splitGroupId = null,
+                receiptUrl = row.valueAt(6).ifBlank { null },
+                tags = row.valueAt(7)
+                    .split(",")
+                    .map { it.trim() }
+                    .filter { it.isNotBlank() },
+                createdAt = parseDateTime(row.valueAt(8)),
+                modifiedAt = parseDateTime(row.valueAt(9)),
+                recurringEntryId = row.valueAt(10).ifBlank { null },
+                occurrencePeriod = row.valueAt(11).ifBlank { null },
+                sheetRowIndex = rowIndex
+            )
         }
     }
 
-    private fun Expense.toSheetRow(): List<String> {
+    private fun parseExpenseRowUsingHeaders(
+        row: List<*>,
+        rowIndex: Int,
+        sheetName: String,
+        includeSheetPrefix: Boolean,
+        headerIndexes: Map<String, Int>
+    ): Expense? {
+        if (headerIndexes.isEmpty()) return null
+
+        val amountValue = row.headerValue(headerIndexes, "amount").toDoubleOrNull()
+        val category = row.headerValue(headerIndexes, "category")
+        val description = row.headerValue(headerIndexes, "description")
+        if (row.headerValue(headerIndexes, "date").isBlank() &&
+            amountValue == null &&
+            category.isBlank() &&
+            description.isBlank()
+        ) {
+            return null
+        }
+
+        val transferAccount = row.headerValue(headerIndexes, "transferaccount").ifBlank { null }
+        val transferDestinationAccount = row.headerValue(headerIndexes, "transferdestinationaccount").ifBlank { null }
+        val explicitTransactionType = row.headerValue(headerIndexes, "transactiontype")
+        val transactionType = when {
+            looksLikeTransactionType(explicitTransactionType) -> parseTransactionType(explicitTransactionType)
+            !transferAccount.isNullOrBlank() || !transferDestinationAccount.isNullOrBlank() -> TransactionType.TRANSFER
+            else -> TransactionType.EXPENSE
+        }
+
+        return Expense(
+            id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
+            date = parseDate(row.headerValue(headerIndexes, "date")),
+            amount = amountValue ?: 0.0,
+            category = category,
+            subcategory = row.headerValue(headerIndexes, "subcategory").ifBlank { null },
+            description = description,
+            paymentMethod = row.headerValue(headerIndexes, "paymentmethod").ifBlank { "Cash" },
+            transferAccount = transferAccount,
+            transferDestinationAccount = transferDestinationAccount,
+            transactionType = transactionType,
+            splitGroupId = row.headerValue(headerIndexes, "splitgroupid").ifBlank { null },
+            receiptUrl = row.headerValue(headerIndexes, "receipturl").ifBlank { null },
+            tags = row.headerValue(headerIndexes, "tags")
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() },
+            createdAt = parseDateTime(row.headerValue(headerIndexes, "createdat")),
+            modifiedAt = parseDateTime(row.headerValue(headerIndexes, "modifiedat")),
+            recurringEntryId = row.headerValue(headerIndexes, "recurringid").ifBlank { null },
+            occurrencePeriod = row.headerValue(headerIndexes, "occurrenceperiod").ifBlank { null },
+            sheetRowIndex = rowIndex
+        )
+    }
+
+    private fun buildExpenseHeaderIndexes(headers: List<String>): Map<String, Int> {
+        return headers.mapIndexedNotNull { index, header ->
+            val normalizedHeader = normalizeHeader(header)
+            when {
+                normalizedHeader.isBlank() -> null
+                normalizedHeader == "payment" -> "paymentmethod" to index
+                normalizedHeader == "receipt" -> "receipturl" to index
+                normalizedHeader == "type" -> "transactiontype" to index
+                normalizedHeader == "period" -> "occurrenceperiod" to index
+                else -> normalizedHeader to index
+            }
+        }.toMap()
+    }
+
+    private fun normalizeHeader(header: String): String {
+        return header.filter(Char::isLetterOrDigit).lowercase(Locale.US)
+    }
+
+    private fun List<*>.headerValue(headerIndexes: Map<String, Int>, key: String): String {
+        val index = headerIndexes[key] ?: return ""
+        return valueAt(index)
+    }
+
+    private fun Expense.toSheetRow(modifiedAt: LocalDateTime = this.modifiedAt): List<String> {
         return listOf(
             date.toString(),
             amount.toString(),
@@ -869,7 +1076,7 @@ class GoogleSheetsRepository(private val context: Context) {
             receiptUrl.orEmpty(),
             tags.joinToString(","),
             createdAt.toString(),
-            LocalDateTime.now().toString(),
+            modifiedAt.toString(),
             recurringEntryId.orEmpty(),
             occurrencePeriod.orEmpty()
         )
@@ -1024,7 +1231,26 @@ class GoogleSheetsRepository(private val context: Context) {
         )
     }
 
-    private fun List<Any>.valueAt(index: Int): String = getOrNull(index)?.toString().orEmpty()
+    private val CURRENT_EXPENSE_HEADER_KEYS = setOf(
+        "date",
+        "amount",
+        "category",
+        "subcategory",
+        "description",
+        "paymentmethod",
+        "transferaccount",
+        "transferdestinationaccount",
+        "transactiontype",
+        "splitgroupid",
+        "receipturl",
+        "tags",
+        "createdat",
+        "modifiedat",
+        "recurringid",
+        "occurrenceperiod"
+    )
+
+    private fun List<*>.valueAt(index: Int): String = getOrNull(index)?.toString().orEmpty()
 
     private fun normalizePeriod(period: String): String {
         return runCatching { YearMonth.parse(period.trim()).toString() }.getOrDefault(period.trim())

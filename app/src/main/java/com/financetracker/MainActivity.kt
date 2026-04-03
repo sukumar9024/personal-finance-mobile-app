@@ -1,5 +1,6 @@
 package com.financetracker
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -92,6 +93,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun postOverspendingNotification(title: String, message: String) {
+        if (!canPostNotifications()) return
+
         val notification = NotificationCompat.Builder(this, OVERSPENDING_CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle(title)
@@ -101,6 +104,16 @@ class MainActivity : ComponentActivity() {
             .setAutoCancel(true)
             .build()
 
+        notifyOverspending(notification)
+    }
+
+    private fun canPostNotifications(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun notifyOverspending(notification: android.app.Notification) {
         NotificationManagerCompat.from(this).notify(OVERSPENDING_NOTIFICATION_ID, notification)
     }
 

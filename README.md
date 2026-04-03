@@ -56,7 +56,7 @@ This repo does not include usable credentials anymore. You need to create your o
 - a Google Cloud service account
 - a service account JSON key file
 
-You also need to replace the placeholder spreadsheet ID in `app/build.gradle.kts`.
+You also need to add your spreadsheet ID to `local.properties` using the `spreadsheet.id` key.
 
 ## 1. Create The Google Sheet
 
@@ -180,11 +180,13 @@ If you skip this, the app will not be able to read or write data.
 
 ### Spreadsheet ID
 
-Open `app/build.gradle.kts` and replace the placeholder with your real spreadsheet ID:
+Add your spreadsheet ID to the root `local.properties` file:
 
-```kotlin
-buildConfigField("String", "SPREADSHEET_ID", "\"YOUR_SPREADSHEET_ID_HERE\"")
+```text
+spreadsheet.id=YOUR_REAL_SPREADSHEET_ID
 ```
+
+If `local.properties` already exists, keep the existing `sdk.dir` entry and add `spreadsheet.id` on a new line.
 
 ### Service account key
 
@@ -211,6 +213,12 @@ If your SDK path is not detected automatically, make sure `local.properties` con
 
 ```text
 sdk.dir=C:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
+```
+
+To enable Google Sheets sync, the same file should also include:
+
+```text
+spreadsheet.id=YOUR_REAL_SPREADSHEET_ID
 ```
 
 Typical useful environment variables on Windows:
@@ -372,11 +380,13 @@ Key files:
 
 Check all of these:
 
-- `SPREADSHEET_ID` in `app/build.gradle.kts` has been replaced and is not still `YOUR_SPREADSHEET_ID_HERE`
+- `local.properties` contains `spreadsheet.id=YOUR_REAL_SPREADSHEET_ID`
 - `service-account-key.json` exists in `app/src/main/assets/`
 - Sheets API is enabled in Google Cloud
 - the spreadsheet is shared with the service account email as `Editor`
 - the phone or emulator has internet access
+
+If you just changed `local.properties`, sync Gradle or rebuild the app so the new value is regenerated into `BuildConfig`.
 
 ### The app installs but shows old or cached data
 
@@ -413,4 +423,4 @@ If you are handing this project to another developer, the only local pieces they
 
 - `local.properties`
 - `app/src/main/assets/service-account-key.json`
-- their own spreadsheet ID in `app/build.gradle.kts`
+- their own spreadsheet ID in `local.properties`

@@ -94,3 +94,5 @@ app/build/
 # Test outputs
 app/src/androidTest/res/
 app/src/test/res/
+
+.vscode

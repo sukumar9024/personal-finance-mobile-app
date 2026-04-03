@@ -347,26 +347,73 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateCategoryBudget(name: String, monthlyBudget: Double?) {
-        if (!repository.isReadyForLiveSync()) {
-            val updatedCategories = _uiState.value.categoryState.categories.map {
-                if (it.name == name) it.copy(monthlyBudget = monthlyBudget) else it
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return
+
+        val existingState = _uiState.value
+        val updatedCategories = existingState.categoryState.categories.map {
+            if (it.name.equals(normalizedName, ignoreCase = true)) {
+                it.copy(monthlyBudget = monthlyBudget)
+            } else {
+                it
             }
+        }
+        val updatedCategory = updatedCategories.firstOrNull {
+            it.name.equals(normalizedName, ignoreCase = true)
+        } ?: Category(
+            name = normalizedName,
+            color = suggestedColorFor(normalizedName),
+            icon = "default",
+            monthlyBudget = monthlyBudget
+        )
+        val categoryState = existingState.categoryState.copy(
+            categories = if (updatedCategories.any { it.name.equals(normalizedName, ignoreCase = true) }) {
+                updatedCategories
+            } else {
+                mergeWithDefaultCategories(existingState.categoryState.categories + updatedCategory)
+            }
+        )
+        val optimisticState = existingState.copy(
+            categoryState = categoryState,
+            errorMessage = null
+        )
+
+        if (!repository.isReadyForLiveSync()) {
             updateLocalState(
-                _uiState.value.copy(
-                    categoryState = _uiState.value.categoryState.copy(categories = updatedCategories),
+                optimisticState.copy(
+                    errorMessage = repository.getConfigurationStatusMessage(),
                     syncStatus = buildSyncStatus(isUsingCachedData = true)
                 )
             )
             return
         }
 
+        updateLocalState(
+            optimisticState.copy(syncStatus = buildSyncStatus(isUsingCachedData = false))
+        )
+
         viewModelScope.launch {
             runCatching {
-                repository.updateCategoryBudget(name, monthlyBudget)
-            }.onSuccess {
-                refreshAllData()
+                repository.updateCategoryBudget(updatedCategory)
+            }.onSuccess { didSave ->
+                if (didSave) {
+                    refreshAllData()
+                } else {
+                    updateLocalState(
+                        optimisticState.copy(
+                            syncStatus = buildSyncStatus(isUsingCachedData = true),
+                            errorMessage = "Failed to save category budget to Google Sheets. Budget is still available locally."
+                        )
+                    )
+                }
             }.onFailure { error ->
-                applyError(error.message ?: "Failed to update category budget.")
+                updateLocalState(
+                    optimisticState.copy(
+                        syncStatus = buildSyncStatus(isUsingCachedData = true),
+                        errorMessage = error.message
+                            ?: "Cannot connect to spreadsheet. Budget saved locally. Check if service account has access."
+                    )
+                )
             }
         }
     }

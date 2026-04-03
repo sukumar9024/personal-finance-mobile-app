@@ -1,6 +1,4 @@
 package com.financetracker.ui.screens
-
-import android.app.DatePickerDialog
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -81,19 +79,14 @@ import com.financetracker.ui.viewmodel.ExpenseViewModel
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
-import java.time.temporal.WeekFields
 import java.util.Locale
 import androidx.compose.ui.text.style.TextOverflow
 import kotlin.math.max
 import kotlin.math.min
 
 private enum class TimelineFilter(val label: String) {
-    DAILY("Daily"),
-    WEEKLY("Weekly"),
     MONTHLY("Monthly"),
-    YEARLY("Yearly"),
-    CUSTOM("Custom")
+    YEARLY("Yearly")
 }
 
 private data class TrendPoint(
@@ -117,12 +110,9 @@ fun ReportsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val categories = uiState.categoryState.categories
-    val context = androidx.compose.ui.platform.LocalContext.current
     val currentPeriod = parseCurrentPeriod(uiState.currentMonthSheet)
-    var selectedTimeline by rememberSaveable { mutableStateOf(TimelineFilter.DAILY) }
+    var selectedTimeline by rememberSaveable { mutableStateOf(TimelineFilter.MONTHLY) }
     var selectedCategory by rememberSaveable { mutableStateOf("All categories") }
-    var customStartDate by rememberSaveable { mutableStateOf(currentPeriod.atDay(1)) }
-    var customEndDate by rememberSaveable { mutableStateOf(currentPeriod.atEndOfMonth()) }
     var editingIncomePeriod by rememberSaveable { mutableStateOf(currentPeriod.toString()) }
     var editingIncomeAmount by rememberSaveable { mutableStateOf("") }
     var showIncomeDialog by rememberSaveable { mutableStateOf(false) }
@@ -134,37 +124,10 @@ fun ReportsScreen(
     val categoryOptions = listOf("All categories") + categories.map { it.name }
     if (selectedCategory !in categoryOptions) selectedCategory = "All categories"
 
-    val startDatePicker = DatePickerDialog(
-        context,
-        { _, year, month, dayOfMonth ->
-            customStartDate = LocalDate.of(year, month + 1, dayOfMonth)
-            if (customStartDate.isAfter(customEndDate)) {
-                customEndDate = customStartDate
-            }
-        },
-        customStartDate.year,
-        customStartDate.monthValue - 1,
-        customStartDate.dayOfMonth
-    )
-    val endDatePicker = DatePickerDialog(
-        context,
-        { _, year, month, dayOfMonth ->
-            customEndDate = LocalDate.of(year, month + 1, dayOfMonth)
-            if (customEndDate.isBefore(customStartDate)) {
-                customStartDate = customEndDate
-            }
-        },
-        customEndDate.year,
-        customEndDate.monthValue - 1,
-        customEndDate.dayOfMonth
-    )
-
     val scopedExpenses = filterExpensesForTimeline(
         expenses = uiState.reportExpenses,
         timeline = selectedTimeline,
-        currentPeriod = currentPeriod,
-        customStartDate = customStartDate,
-        customEndDate = customEndDate
+        currentPeriod = currentPeriod
     )
     val filteredExpenses = if (selectedCategory == "All categories") {
         scopedExpenses
@@ -177,23 +140,14 @@ fun ReportsScreen(
         expenses = filteredExpenses,
         incomeEntries = uiState.incomeEntries,
         currentPeriod = currentPeriod,
-        currentMonthlyIncome = uiState.monthlyIncome,
-        customStartDate = customStartDate,
-        customEndDate = customEndDate
+        currentMonthlyIncome = uiState.monthlyIncome
     )
     val categoryTotals = filteredExpenses
         .groupBy { it.category }
         .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
         .toList()
         .sortedByDescending { it.second }
-    val totalIncome = when (selectedTimeline) {
-        TimelineFilter.DAILY -> uiState.monthlyIncome
-        TimelineFilter.CUSTOM -> uiState.incomeEntries.sumOf { entry ->
-            val period = runCatching { YearMonth.parse(entry.period) }.getOrNull()
-            if (period != null && period.atDay(1) in customStartDate..customEndDate) entry.amount else 0.0
-        }
-        else -> trendPoints.sumOf { it.income }
-    }
+    val totalIncome = trendPoints.sumOf { it.income }
     val totalSpending = filteredExpenses.sumOf { it.amount }
     val remainingAmount = totalIncome - totalSpending
     val averageExpense = if (filteredExpenses.isNotEmpty()) totalSpending / filteredExpenses.size else 0.0
@@ -236,15 +190,6 @@ fun ReportsScreen(
                 onCategorySelected = { selectedCategory = it },
                 points = trendPoints
             )
-
-            if (selectedTimeline == TimelineFilter.CUSTOM) {
-                CustomRangeCard(
-                    startDate = customStartDate,
-                    endDate = customEndDate,
-                    onStartClick = { startDatePicker.show() },
-                    onEndClick = { endDatePicker.show() }
-                )
-            }
 
             CategoryBreakdownCard(
                 categoryTotals = categoryTotals,
@@ -535,7 +480,7 @@ private fun BudgetTrendCard(
         Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
             SectionHeader(
                 title = "Budget Trend",
-                subtitle = "Income line with spending and remaining balance over time"
+                subtitle = "Monthly or yearly view of income, spending, and remaining balance"
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -569,50 +514,6 @@ private fun BudgetTrendCard(
                 Text("No trend data is available for the selected filters.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 TrendLineChart(points)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CustomRangeCard(
-    startDate: LocalDate,
-    endDate: LocalDate,
-    onStartClick: () -> Unit,
-    onEndClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = Shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
-    ) {
-        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-            SectionHeader(
-                title = "Custom Range",
-                subtitle = "Choose the start and end dates for this report"
-            )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Surface(
-                    modifier = Modifier.weight(1f).clickable(onClick = onStartClick),
-                    shape = Shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ) {
-                    Column(modifier = Modifier.padding(Spacing.md)) {
-                        Text("Start", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(startDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy")), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Surface(
-                    modifier = Modifier.weight(1f).clickable(onClick = onEndClick),
-                    shape = Shapes.medium,
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-                ) {
-                    Column(modifier = Modifier.padding(Spacing.md)) {
-                        Text("End", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(endDate.format(DateTimeFormatter.ofPattern("dd MMM yyyy")), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                    }
-                }
             }
         }
     }
@@ -826,20 +727,11 @@ private fun parseCurrentPeriod(sheetName: String): YearMonth {
 private fun filterExpensesForTimeline(
     expenses: List<Expense>,
     timeline: TimelineFilter,
-    currentPeriod: YearMonth,
-    customStartDate: LocalDate,
-    customEndDate: LocalDate
+    currentPeriod: YearMonth
 ): List<Expense> {
     return when (timeline) {
-        TimelineFilter.DAILY -> expenses.filter { YearMonth.from(it.date) == currentPeriod }
-        TimelineFilter.WEEKLY -> {
-            val endDate = currentPeriod.atEndOfMonth()
-            val startDate = endDate.minusWeeks(7)
-            expenses.filter { !it.date.isBefore(startDate) && !it.date.isAfter(endDate) }
-        }
         TimelineFilter.MONTHLY -> expenses.filter { it.date.year == currentPeriod.year }
         TimelineFilter.YEARLY -> expenses
-        TimelineFilter.CUSTOM -> expenses.filter { !it.date.isBefore(customStartDate) && !it.date.isAfter(customEndDate) }
     }
 }
 
@@ -848,76 +740,11 @@ private fun buildTrendPoints(
     expenses: List<Expense>,
     incomeEntries: List<IncomeEntry>,
     currentPeriod: YearMonth,
-    currentMonthlyIncome: Double,
-    customStartDate: LocalDate,
-    customEndDate: LocalDate
+    currentMonthlyIncome: Double
 ): List<TrendPoint> {
     return when (timeline) {
-        TimelineFilter.DAILY -> buildDailyTrendPoints(expenses, currentPeriod, currentMonthlyIncome)
-        TimelineFilter.WEEKLY -> buildWeeklyTrendPoints(expenses, incomeEntries, currentPeriod)
         TimelineFilter.MONTHLY -> buildMonthlyTrendPoints(expenses, incomeEntries, currentPeriod, currentMonthlyIncome)
         TimelineFilter.YEARLY -> buildYearlyTrendPoints(expenses, incomeEntries)
-        TimelineFilter.CUSTOM -> buildCustomTrendPoints(expenses, customStartDate, customEndDate)
-    }
-}
-
-private fun buildWeeklyTrendPoints(
-    expenses: List<Expense>,
-    incomeEntries: List<IncomeEntry>,
-    currentPeriod: YearMonth
-): List<TrendPoint> {
-    val endDate = currentPeriod.atEndOfMonth()
-    val startDate = endDate.minusWeeks(7)
-    val weeks = generateSequence(startDate) { previous ->
-        val next = previous.plusWeeks(1)
-        if (next <= endDate) next else null
-    }.toList()
-
-    return weeks.map { weekStart ->
-        val weekEnd = minOf(weekStart.plusDays(6), endDate)
-        val spending = expenses.filter { !it.date.isBefore(weekStart) && !it.date.isAfter(weekEnd) }.sumOf { it.amount }
-        val income = incomeEntries.sumOf { entry ->
-            val period = runCatching { YearMonth.parse(entry.period) }.getOrNull()
-            if (period != null && period.atDay(1) in weekStart..weekEnd) entry.amount else 0.0
-        }
-        TrendPoint(
-            label = "W${weekStart.get(WeekFields.of(Locale.getDefault()).weekOfWeekBasedYear())}",
-            income = income,
-            spending = spending,
-            remaining = income - spending
-        )
-    }
-}
-
-private fun buildCustomTrendPoints(
-    expenses: List<Expense>,
-    customStartDate: LocalDate,
-    customEndDate: LocalDate
-): List<TrendPoint> {
-    val totalDays = ChronoUnit.DAYS.between(customStartDate, customEndDate).toInt().coerceAtLeast(0)
-    val points = generateSequence(customStartDate) { previous ->
-        val next = previous.plusDays(1)
-        if (next <= customEndDate) next else null
-    }.toList()
-    val sampledPoints = if (points.size > 10) points.filterIndexed { index, _ -> index % (points.size / 10).coerceAtLeast(1) == 0 } else points
-
-    return sampledPoints.map { date ->
-        val spending = expenses.filter { it.date == date }.sumOf { it.amount }
-        TrendPoint(
-            label = if (totalDays > 31) date.format(DateTimeFormatter.ofPattern("dd MMM")) else date.dayOfMonth.toString(),
-            income = 0.0,
-            spending = spending,
-            remaining = -spending
-        )
-    }
-}
-
-private fun buildDailyTrendPoints(expenses: List<Expense>, currentPeriod: YearMonth, currentMonthlyIncome: Double): List<TrendPoint> {
-    var cumulativeSpending = 0.0
-    val endDay = min(currentPeriod.lengthOfMonth(), max(7, currentPeriod.atEndOfMonth().dayOfMonth.coerceAtMost(31)))
-    return (1..endDay).map { day ->
-        cumulativeSpending += expenses.filter { it.date.dayOfMonth == day && YearMonth.from(it.date) == currentPeriod }.sumOf { it.amount }
-        TrendPoint(day.toString(), currentMonthlyIncome, cumulativeSpending, currentMonthlyIncome - cumulativeSpending)
     }.takeLast(7)
 }
 

@@ -301,10 +301,10 @@ item {
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     SetupStep(number = "1", text = "Create a Google Sheet for tracking your expenses.")
-                    SetupStep(number = "2", text = "Add a 'categories' tab with columns: Name and Color.")
+                    SetupStep(number = "2", text = "Add a 'categories' tab with columns: Name, Color, and Monthly Budget.")
                     SetupStep(number = "3", text = "Share the sheet with your service account email as Editor.")
-                    SetupStep(number = "4", text = "Copy the spreadsheet ID from the URL.")
-                    SetupStep(number = "5", text = "Add your credentials to the app configuration.")
+                    SetupStep(number = "4", text = "Copy the spreadsheet ID from the URL and add it to local.properties as spreadsheet.id.")
+                    SetupStep(number = "5", text = "Place your service account JSON in app/src/main/assets/service-account-key.json.")
                 }
             },
             confirmButton = {

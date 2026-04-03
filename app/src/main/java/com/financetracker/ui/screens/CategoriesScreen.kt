@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -208,12 +209,17 @@ fun CategoriesScreen(
                     OutlinedTextField(
                         value = budgetInput,
                         onValueChange = { value ->
-                            budgetInput = value.filter { it.isDigit() || it == '.' }
+                            budgetInput = sanitizeDecimalInput(value)
                         },
                         label = { Text("Monthly budget") },
                         placeholder = { Text("Set category budget") },
                         singleLine = true,
                         shape = Shapes.medium
+                    )
+                    Text(
+                        text = "Leave this blank to remove the category budget.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             },
@@ -225,7 +231,8 @@ fun CategoriesScreen(
                             budgetInput.toDoubleOrNull()
                         )
                         selectedCategoryForBudget = null
-                    }
+                    },
+                    enabled = budgetInput.isBlank() || budgetInput.toDoubleOrNull() != null
                 ) {
                     Text("Save")
                 }
@@ -402,7 +409,25 @@ private fun CategoryItemCard(
                     }
                 }
             }
+
+            TextButton(
+                onClick = onClick,
+                modifier = Modifier.align(Alignment.End),
+                colors = ButtonDefaults.textButtonColors(contentColor = accent)
+            ) {
+                Text(if (categoryBudget > 0.0) "Update budget" else "Set budget")
+            }
         }
+    }
+}
+
+private fun sanitizeDecimalInput(value: String): String {
+    val filtered = value.filter { it.isDigit() || it == '.' }
+    val firstDot = filtered.indexOf('.')
+    return if (firstDot == -1) {
+        filtered
+    } else {
+        filtered.substring(0, firstDot + 1) + filtered.substring(firstDot + 1).replace(".", "")
     }
 }
 
