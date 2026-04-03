@@ -75,6 +75,7 @@ fun EditExpenseScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val currency = uiState.currency
     val expense = uiState.expenses.find { it.id == expenseId }
 
     if (expense == null) {
@@ -272,6 +273,7 @@ fun EditExpenseScreen(
             AmountPreviewCard(
                 amount = amountValue,
                 date = date,
+                currency = currency,
                 onDateClick = { datePickerDialog.show() }
             )
 
@@ -285,7 +287,7 @@ fun EditExpenseScreen(
                     label = { Text("Amount") },
                     leadingIcon = {
                         Text(
-                            text = "₹",
+                            text = currency.symbol,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold

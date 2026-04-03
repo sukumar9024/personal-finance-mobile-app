@@ -52,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.financetracker.data.model.Category
+import com.financetracker.data.model.Currency
 import com.financetracker.ui.theme.CardElevation
 import com.financetracker.ui.theme.ScreenPadding
 import com.financetracker.ui.theme.Shapes
@@ -73,6 +74,7 @@ fun CategoriesScreen(
     val totalSpent = uiState.totalAmount
     val totalBudget = uiState.monthlyIncome
     val totalRemaining = uiState.monthlyIncome - uiState.totalAmount
+    val currency = uiState.currency
     var showAddDialog by remember { mutableStateOf(false) }
     var newCategoryName by remember { mutableStateOf("") }
     var newCategoryColor by remember { mutableStateOf("") }
@@ -112,7 +114,12 @@ fun CategoriesScreen(
                 }
                 else -> {
                     Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-                        CategoriesSummaryCard(totalBudget = totalBudget, totalSpent = totalSpent, totalRemaining = totalRemaining)
+                        CategoriesSummaryCard(
+                            totalBudget = totalBudget,
+                            totalSpent = totalSpent,
+                            totalRemaining = totalRemaining,
+                            currency = currency
+                        )
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(2),
                             horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -124,6 +131,7 @@ fun CategoriesScreen(
                                     category = category,
                                     spentAmount = spendByCategory[category.name] ?: 0.0,
                                     monthlyIncome = totalBudget,
+                                    currency = currency,
                                     onClick = {
                                         selectedCategoryForBudget = category
                                         budgetInput = category.monthlyBudget?.toEditableAmount().orEmpty()
@@ -239,7 +247,8 @@ fun CategoriesScreen(
 private fun CategoriesSummaryCard(
     totalBudget: Double,
     totalSpent: Double,
-    totalRemaining: Double
+    totalRemaining: Double,
+    currency: Currency
 ) {
     val progress = if (totalBudget > 0.0) (totalSpent / totalBudget).toFloat().coerceIn(0f, 1f) else 0f
 
@@ -252,7 +261,7 @@ private fun CategoriesSummaryCard(
         Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
             Text("Monthly Budget Snapshot", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                if (totalBudget > 0.0) "${formatCurrency(totalSpent)} spent from ${formatCurrency(totalBudget)} this month" else "Set your monthly income in Settings to track your budget.",
+                if (totalBudget > 0.0) "${formatCurrency(totalSpent, currency)} spent from ${formatCurrency(totalBudget, currency)} this month" else "Set your monthly income in Settings to track your budget.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -278,9 +287,9 @@ private fun CategoriesSummaryCard(
             }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                CategorySummaryMetric("Budget", formatCurrencyRounded(totalBudget), Modifier.weight(1f))
-                CategorySummaryMetric("Spent", formatCurrencyRounded(totalSpent), Modifier.weight(1f))
-                CategorySummaryMetric("Remaining", formatCurrencyRounded(totalRemaining), Modifier.weight(1f))
+                CategorySummaryMetric("Budget", formatCurrencyRounded(totalBudget, currency), Modifier.weight(1f))
+                CategorySummaryMetric("Spent", formatCurrencyRounded(totalSpent, currency), Modifier.weight(1f))
+                CategorySummaryMetric("Remaining", formatCurrencyRounded(totalRemaining, currency), Modifier.weight(1f))
             }
         }
     }
@@ -301,6 +310,7 @@ private fun CategoryItemCard(
     category: Category,
     spentAmount: Double,
     monthlyIncome: Double,
+    currency: Currency,
     onClick: () -> Unit
 ) {
     val accent = categoryColor(category)
@@ -333,7 +343,7 @@ private fun CategoryItemCard(
                 }
                 Surface(shape = Shapes.medium, color = accent.copy(alpha = 0.12f)) {
                     Text(
-                        text = if (spentAmount > 0.0) formatCurrencyRounded(spentAmount) else "₹0",
+                        text = if (spentAmount > 0.0) formatCurrencyRounded(spentAmount, currency) else "${currency.symbol}0",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = accent,
@@ -358,7 +368,7 @@ private fun CategoryItemCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("Spent", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(formatCurrency(spentAmount), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(formatCurrency(spentAmount, currency), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -367,7 +377,7 @@ private fun CategoryItemCard(
                     ) {
                         Text("Budget", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            if (categoryBudget > 0.0) formatCurrency(categoryBudget) else "Tap to set",
+                            if (categoryBudget > 0.0) formatCurrency(categoryBudget, currency) else "Tap to set",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = if (categoryBudget > 0.0) MaterialTheme.colorScheme.onSurface else accent

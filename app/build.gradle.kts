@@ -19,8 +19,8 @@ android {
             useSupportLibrary = true
         }
 
-        // For Google Sheets API - will be populated with actual credentials
-        buildConfigField("String", "SPREADSHEET_ID", "\"1rxcpH-jeU5p4P7Pq_CbqdsvyBSvJUDm-WPdq1ZAlpDs\"")
+        // Set your own spreadsheet ID before using live sync
+        buildConfigField("String", "SPREADSHEET_ID", "\"\"")
         buildConfigField("String", "SERVICE_ACCOUNT_JSON", "\"\"")
     }
 

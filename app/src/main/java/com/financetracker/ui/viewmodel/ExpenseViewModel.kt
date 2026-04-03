@@ -11,6 +11,7 @@ import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.isTransfer
 import com.financetracker.data.model.spendingTotal
 import com.financetracker.data.repository.GoogleSheetsRepository
+import com.financetracker.ui.theme.setPreferredCurrency
 import com.financetracker.ui.theme.ThemeMode
 import com.financetracker.data.model.Currency
 import kotlinx.coroutines.async
@@ -68,16 +69,21 @@ data class FinanceTrackerUiState(
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GoogleSheetsRepository(application)
+    private val savedThemeMode = repository.loadThemeMode()
+    private val savedCurrency = repository.loadCurrency()
 
     private val _uiState = MutableStateFlow(
         FinanceTrackerUiState(
             currentMonthSheet = repository.getCurrentMonthSheetName(),
-            syncStatus = buildSyncStatus(isUsingCachedData = false)
+            syncStatus = buildSyncStatus(isUsingCachedData = false),
+            themeMode = savedThemeMode,
+            currency = savedCurrency
         )
     )
     val uiState: StateFlow<FinanceTrackerUiState> = _uiState.asStateFlow()
 
     init {
+        setPreferredCurrency(savedCurrency)
         hydrateFromCache()
         refreshAllData()
     }
@@ -231,7 +237,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearPendingUndoDelete() {
-        val pending = _uiState.value.pendingUndoDelete ?: return
+        if (_uiState.value.pendingUndoDelete == null) return
         updateLocalState(_uiState.value.copy(pendingUndoDelete = null))
     }
 
@@ -240,13 +246,16 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         updateLocalState(_uiState.value.copy(overspendingAlert = null))
     }
 
-fun setThemeMode(themeMode: ThemeMode) {
-    updateLocalState(_uiState.value.copy(themeMode = themeMode))
-}
+    fun setThemeMode(themeMode: ThemeMode) {
+        repository.saveThemeMode(themeMode)
+        updateLocalState(_uiState.value.copy(themeMode = themeMode))
+    }
 
-fun setCurrency(currency: Currency) {
-    updateLocalState(_uiState.value.copy(currency = currency))
-}
+    fun setCurrency(currency: Currency) {
+        repository.saveCurrency(currency)
+        setPreferredCurrency(currency)
+        updateLocalState(_uiState.value.copy(currency = currency))
+    }
 
     fun setMonthlyIncome(amount: Double) {
         setMonthlyIncomeForPeriod(periodFromSheet(currentSheetName()), amount)

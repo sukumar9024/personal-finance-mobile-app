@@ -58,6 +58,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.TransactionType
 import com.financetracker.ui.theme.CardShape
@@ -86,6 +87,7 @@ fun AddExpenseScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val currency = uiState.currency
 
     var entryMode by remember { mutableStateOf(EntryMode.EXPENSE) }
     var date by remember { mutableStateOf(LocalDate.now()) }
@@ -306,6 +308,7 @@ fun AddExpenseScreen(
             AmountPreviewCard(
                 amount = amountValue,
                 date = date,
+                currency = currency,
                 onDateClick = { datePickerDialog.show() }
             )
 
@@ -319,7 +322,7 @@ fun AddExpenseScreen(
                     label = { Text("Amount") },
                     leadingIcon = {
                         Text(
-                            text = "\u20B9",
+                            text = currency.symbol,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
@@ -615,6 +618,7 @@ fun AddExpenseScreen(
 internal fun AmountPreviewCard(
     amount: Double,
     date: LocalDate,
+    currency: Currency,
     onDateClick: () -> Unit
 ) {
     Card(
@@ -627,7 +631,7 @@ internal fun AmountPreviewCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = formatCurrency(amount),
+                text = formatCurrency(amount, currency),
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary

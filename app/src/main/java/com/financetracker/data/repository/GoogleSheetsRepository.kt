@@ -3,11 +3,13 @@ package com.financetracker.data.repository
 import android.content.Context
 import com.financetracker.BuildConfig
 import com.financetracker.data.model.Category
+import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
 import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.TransactionType
+import com.financetracker.ui.theme.ThemeMode
 import com.google.api.client.googleapis.auth.oauth2.GoogleCredential
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
@@ -42,6 +44,8 @@ class GoogleSheetsRepository(private val context: Context) {
         private const val LAST_SYNC_ATTEMPT_KEY = "last_sync_attempt"
         private const val LAST_SUCCESSFUL_SYNC_KEY = "last_successful_sync"
         private const val LAST_SYNC_ERROR_KEY = "last_sync_error"
+        private const val THEME_MODE_KEY = "theme_mode"
+        private const val CURRENCY_KEY = "currency"
         private val EXPENSE_SHEET_REGEX = Regex("""expenses_\d{4}_\d{2}""")
 
         private val DEFAULT_CATEGORIES = listOf(
@@ -142,6 +146,24 @@ class GoogleSheetsRepository(private val context: Context) {
 
     fun getDefaultCategories(): List<Category> = DEFAULT_CATEGORIES
 
+    fun loadThemeMode(): ThemeMode {
+        val savedThemeMode = prefs.getString(THEME_MODE_KEY, null) ?: return ThemeMode.SYSTEM
+        return runCatching { ThemeMode.valueOf(savedThemeMode) }.getOrDefault(ThemeMode.SYSTEM)
+    }
+
+    fun saveThemeMode(themeMode: ThemeMode) {
+        prefs.edit().putString(THEME_MODE_KEY, themeMode.name).apply()
+    }
+
+    fun loadCurrency(): Currency {
+        val savedCurrency = prefs.getString(CURRENCY_KEY, null) ?: return Currency.getDefault()
+        return Currency.fromCode(savedCurrency)
+    }
+
+    fun saveCurrency(currency: Currency) {
+        prefs.edit().putString(CURRENCY_KEY, currency.code).apply()
+    }
+
     fun loadCachedData(): CachedFinanceData? {
         val rawJson = prefs.getString(CACHE_KEY, null) ?: return null
         return runCatching {
@@ -213,7 +235,7 @@ class GoogleSheetsRepository(private val context: Context) {
         service.spreadsheets().values()
             .update(
                 spreadsheetId,
-                "$sheetName!A${expense.sheetRowIndex}:O${expense.sheetRowIndex}",
+                "$sheetName!A${expense.sheetRowIndex}:P${expense.sheetRowIndex}",
                 ValueRange().setValues(listOf(expense.toSheetRow()))
             )
             .setValueInputOption("RAW")
@@ -738,7 +760,7 @@ class GoogleSheetsRepository(private val context: Context) {
 
     private fun appendExpenseRow(service: Sheets, sheetName: String, expense: Expense) {
         service.spreadsheets().values()
-            .append(spreadsheetId, "$sheetName!A:O", ValueRange().setValues(listOf(expense.toSheetRow())))
+            .append(spreadsheetId, "$sheetName!A:P", ValueRange().setValues(listOf(expense.toSheetRow())))
             .setValueInputOption("RAW")
             .execute()
     }
@@ -749,15 +771,15 @@ class GoogleSheetsRepository(private val context: Context) {
         includeSheetPrefix: Boolean = false
     ): List<Expense> {
         val values = service.spreadsheets().values()
-            .get(spreadsheetId, "$sheetName!A2:O")
+            .get(spreadsheetId, "$sheetName!A2:P")
             .execute()
             .getValues()
             .orEmpty()
 
         return values.mapIndexed { index, row ->
             val rowIndex = index + 2
-            val hasExtendedColumns = row.size >= 16
-            Expense(
+            when {
+                row.size >= 16 -> Expense(
                 id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
                 date = parseDate(row.valueAt(0)),
                 amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
@@ -765,21 +787,70 @@ class GoogleSheetsRepository(private val context: Context) {
                 subcategory = row.valueAt(3).ifBlank { null },
                 description = row.valueAt(4),
                 paymentMethod = row.valueAt(5).ifBlank { "Cash" },
-                transferAccount = if (hasExtendedColumns) row.valueAt(6).ifBlank { null } else null,
-                transferDestinationAccount = if (hasExtendedColumns) row.valueAt(7).ifBlank { null } else null,
-                transactionType = if (hasExtendedColumns) parseTransactionType(row.valueAt(8)) else TransactionType.EXPENSE,
-                splitGroupId = if (hasExtendedColumns) row.valueAt(9).ifBlank { null } else null,
-                receiptUrl = row.valueAt(if (hasExtendedColumns) 10 else 6).ifBlank { null },
-                tags = row.valueAt(if (hasExtendedColumns) 11 else 7)
+                transferAccount = row.valueAt(6).ifBlank { null },
+                transferDestinationAccount = row.valueAt(7).ifBlank { null },
+                transactionType = parseTransactionType(row.valueAt(8)),
+                splitGroupId = row.valueAt(9).ifBlank { null },
+                receiptUrl = row.valueAt(10).ifBlank { null },
+                tags = row.valueAt(11)
                     .split(",")
                     .map { it.trim() }
                     .filter { it.isNotBlank() },
-                createdAt = parseDateTime(row.valueAt(if (hasExtendedColumns) 12 else 8)),
-                modifiedAt = parseDateTime(row.valueAt(if (hasExtendedColumns) 13 else 9)),
-                recurringEntryId = row.valueAt(if (hasExtendedColumns) 14 else 10).ifBlank { null },
-                occurrencePeriod = row.valueAt(if (hasExtendedColumns) 15 else 11).ifBlank { null },
+                createdAt = parseDateTime(row.valueAt(12)),
+                modifiedAt = parseDateTime(row.valueAt(13)),
+                recurringEntryId = row.valueAt(14).ifBlank { null },
+                occurrencePeriod = row.valueAt(15).ifBlank { null },
                 sheetRowIndex = rowIndex
-            )
+                )
+
+                row.size >= 15 -> Expense(
+                    id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
+                    date = parseDate(row.valueAt(0)),
+                    amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
+                    category = row.valueAt(2),
+                    subcategory = row.valueAt(3).ifBlank { null },
+                    description = row.valueAt(4),
+                    paymentMethod = row.valueAt(5).ifBlank { "Cash" },
+                    transferAccount = row.valueAt(6).ifBlank { null },
+                    transferDestinationAccount = null,
+                    transactionType = parseTransactionType(row.valueAt(7)),
+                    splitGroupId = row.valueAt(8).ifBlank { null },
+                    receiptUrl = row.valueAt(9).ifBlank { null },
+                    tags = row.valueAt(10)
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() },
+                    createdAt = parseDateTime(row.valueAt(11)),
+                    modifiedAt = parseDateTime(row.valueAt(12)),
+                    recurringEntryId = row.valueAt(13).ifBlank { null },
+                    occurrencePeriod = row.valueAt(14).ifBlank { null },
+                    sheetRowIndex = rowIndex
+                )
+
+                else -> Expense(
+                    id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
+                    date = parseDate(row.valueAt(0)),
+                    amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
+                    category = row.valueAt(2),
+                    subcategory = row.valueAt(3).ifBlank { null },
+                    description = row.valueAt(4),
+                    paymentMethod = row.valueAt(5).ifBlank { "Cash" },
+                    transferAccount = null,
+                    transferDestinationAccount = null,
+                    transactionType = TransactionType.EXPENSE,
+                    splitGroupId = null,
+                    receiptUrl = row.valueAt(6).ifBlank { null },
+                    tags = row.valueAt(7)
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() },
+                    createdAt = parseDateTime(row.valueAt(8)),
+                    modifiedAt = parseDateTime(row.valueAt(9)),
+                    recurringEntryId = row.valueAt(10).ifBlank { null },
+                    occurrencePeriod = row.valueAt(11).ifBlank { null },
+                    sheetRowIndex = rowIndex
+                )
+            }
         }
     }
 
@@ -792,6 +863,7 @@ class GoogleSheetsRepository(private val context: Context) {
             description,
             paymentMethod,
             transferAccount.orEmpty(),
+            transferDestinationAccount.orEmpty(),
             transactionType.name,
             splitGroupId.orEmpty(),
             receiptUrl.orEmpty(),
@@ -827,6 +899,7 @@ class GoogleSheetsRepository(private val context: Context) {
             put("description", description)
             put("paymentMethod", paymentMethod)
             put("transferAccount", transferAccount)
+            put("transferDestinationAccount", transferDestinationAccount)
             put("transactionType", transactionType.name)
             put("splitGroupId", splitGroupId)
             put("receiptUrl", receiptUrl)
@@ -902,6 +975,7 @@ class GoogleSheetsRepository(private val context: Context) {
             description = optString("description"),
             paymentMethod = optString("paymentMethod", "Cash"),
             transferAccount = optString("transferAccount").ifBlank { null },
+            transferDestinationAccount = optString("transferDestinationAccount").ifBlank { null },
             transactionType = parseTransactionType(optString("transactionType", TransactionType.EXPENSE.name)),
             splitGroupId = optString("splitGroupId").ifBlank { null },
             receiptUrl = optString("receiptUrl").ifBlank { null },

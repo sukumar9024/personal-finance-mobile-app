@@ -211,11 +211,11 @@ val ElementSpacing = 12.dp
 
 // Format currency with proper formatting
 fun financeFormatCurrency(amount: Double): String {
-    return "₹${"%,.2f".format(amount)}"
+    return "\u20B9${"%,.2f".format(amount)}"
 }
 
 fun financeFormatCurrencyRounded(amount: Double): String {
-    return "₹${"%,.0f".format(amount)}"
+    return "\u20B9${"%,.0f".format(amount)}"
 }
 
 // Get category color from theme or fallback
@@ -455,10 +455,8 @@ fun FinanceProgressBar(
 @Composable
 fun FinanceAnimatedIcon(
     icon: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-    isActive: Boolean = false
+    modifier: Modifier = Modifier
 ) {
-    val scale = if (isActive) 1.1f else 1.0f
     Box(
         modifier = modifier,
         contentAlignment = Alignment.Center

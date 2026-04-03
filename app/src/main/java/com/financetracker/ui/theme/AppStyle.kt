@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.financetracker.data.model.Category
+import kotlin.math.absoluteValue
+import kotlin.math.roundToLong
 import java.text.NumberFormat
 import java.util.Locale
 import com.financetracker.data.model.Currency as AppCurrency
@@ -83,27 +85,60 @@ val CardElevation = 1.dp
 val CardBorderWidth = 1.dp
 
 // Currency Formatting
-fun formatCurrency(amount: Double, currency: AppCurrency = AppCurrency.getDefault()): String {
-    val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-    format.currency = java.util.Currency.getInstance(currency.code)
-    format.maximumFractionDigits = when (currency) {
-        AppCurrency.JPY, AppCurrency.CNY -> 0
+private object CurrencyFormattingState {
+    @Volatile
+    var selectedCurrency: AppCurrency = AppCurrency.getDefault()
+}
+
+fun setPreferredCurrency(currency: AppCurrency) {
+    CurrencyFormattingState.selectedCurrency = currency
+}
+
+private fun currentCurrency(): AppCurrency = CurrencyFormattingState.selectedCurrency
+
+private fun localeForCurrency(currency: AppCurrency): Locale {
+    return when (currency) {
+        AppCurrency.USD -> Locale.US
+        AppCurrency.EUR -> Locale.GERMANY
+        AppCurrency.GBP -> Locale.UK
+        AppCurrency.INR -> Locale("en", "IN")
+        AppCurrency.JPY -> Locale.JAPAN
+        AppCurrency.CNY -> Locale.CHINA
+        AppCurrency.AUD -> Locale("en", "AU")
+        AppCurrency.CAD -> Locale.CANADA
+        AppCurrency.SGD -> Locale("en", "SG")
+        AppCurrency.AED -> Locale("en", "AE")
+    }
+}
+
+private fun fractionDigitsFor(currency: AppCurrency): Int {
+    return when (currency) {
+        AppCurrency.JPY -> 0
         else -> 2
     }
+}
+
+fun formatCurrency(amount: Double, currency: AppCurrency = currentCurrency()): String {
+    val format = NumberFormat.getCurrencyInstance(localeForCurrency(currency))
+    format.currency = java.util.Currency.getInstance(currency.code)
+    val fractionDigits = fractionDigitsFor(currency)
+    format.minimumFractionDigits = fractionDigits
+    format.maximumFractionDigits = fractionDigits
     return format.format(amount)
 }
 
-fun formatCurrencyRounded(amount: Double, currency: AppCurrency = AppCurrency.getDefault()): String {
-    val roundedAmount = Math.round(amount)
+fun formatCurrencyRounded(amount: Double, currency: AppCurrency = currentCurrency()): String {
+    val roundedAmount = amount.absoluteValue.roundToLong()
+    val sign = if (amount < 0) "-" else ""
     return if (roundedAmount >= 1000) {
         val thousands = roundedAmount / 1000.0
         if (thousands == thousands.toLong().toDouble()) {
-            "${currency.symbol}${thousands.toLong()}k"
+            "$sign${currency.symbol}${thousands.toLong()}k"
         } else {
-            "${currency.symbol}${String.format(Locale.US, "%.1f", thousands)}k"
+            "$sign${currency.symbol}${String.format(Locale.US, "%.1f", thousands)}k"
         }
     } else {
-        "${currency.symbol}$roundedAmount"
+        "$sign${currency.symbol}$roundedAmount"
     }
 }
 
