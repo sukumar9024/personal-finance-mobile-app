@@ -1,6 +1,8 @@
 package com.financetracker.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,19 +11,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,7 +37,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -40,20 +44,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.financetracker.ui.theme.CardElevation
 import com.financetracker.ui.theme.ScreenPadding
 import com.financetracker.ui.theme.Shapes
 import com.financetracker.ui.theme.Spacing
 import com.financetracker.ui.theme.ThemeMode
-import com.financetracker.ui.theme.formatCurrency
 import com.financetracker.ui.viewmodel.ExpenseViewModel
+import com.financetracker.data.model.Currency
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,7 +64,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showInfoDialog by remember { mutableStateOf(false) }
+    val showInfoDialog = remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -93,58 +95,138 @@ fun SettingsScreen(
                 .padding(horizontal = ScreenPadding, vertical = Spacing.lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
-            // Status Card
-            item {
-                StatusCard(
-                    currentMonthSheet = uiState.currentMonthSheet,
-                    entryCount = uiState.expenses.size,
-                    totalAmount = uiState.totalAmount,
-                    categoryCount = uiState.categoryState.categories.size
-                )
-            }
+item {
+    SettingsSection(
+        title = "Appearance",
+        subtitle = "Choose how the app should look"
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+        ) {
+            ThemeOption(
+                title = "System",
+                icon = Icons.Default.BrightnessAuto,
+                selected = uiState.themeMode == ThemeMode.SYSTEM,
+                onClick = { viewModel.setThemeMode(ThemeMode.SYSTEM) },
+                modifier = Modifier.weight(1f)
+            )
+            ThemeOption(
+                title = "Light",
+                icon = Icons.Default.LightMode,
+                selected = uiState.themeMode == ThemeMode.LIGHT,
+                onClick = { viewModel.setThemeMode(ThemeMode.LIGHT) },
+                modifier = Modifier.weight(1f)
+            )
+            ThemeOption(
+                title = "Dark",
+                icon = Icons.Default.DarkMode,
+                selected = uiState.themeMode == ThemeMode.DARK,
+                onClick = { viewModel.setThemeMode(ThemeMode.DARK) },
+                modifier = Modifier.weight(1f)
+            )
+        }
+    }
+}
 
-            // Theme Selection
-            item {
-                SettingsSection(
-                    title = "Appearance",
-                    subtitle = "Choose your preferred theme"
+item {
+    SettingsSection(
+        title = "Currency",
+        subtitle = "Select your preferred currency"
+    ) {
+                        val expanded = remember { mutableStateOf(false) }
+                        
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = Shapes.medium,
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Column {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { expanded.value = !expanded.value }
+                        .padding(Spacing.md),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ThemeOption(
-                            title = "System",
-                            icon = Icons.Default.BrightnessAuto,
-                            selected = uiState.themeMode == ThemeMode.SYSTEM,
-                            onClick = { viewModel.setThemeMode(ThemeMode.SYSTEM) },
-                            modifier = Modifier.weight(1f)
+                        Icon(
+                            imageVector = Icons.Default.AttachMoney,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        ThemeOption(
-                            title = "Light",
-                            icon = Icons.Default.LightMode,
-                            selected = uiState.themeMode == ThemeMode.LIGHT,
-                            onClick = { viewModel.setThemeMode(ThemeMode.LIGHT) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        ThemeOption(
-                            title = "Dark",
-                            icon = Icons.Default.DarkMode,
-                            selected = uiState.themeMode == ThemeMode.DARK,
-                            onClick = { viewModel.setThemeMode(ThemeMode.DARK) },
-                            modifier = Modifier.weight(1f)
+                        Column {
+                            Text(
+                                text = "Currency",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "${uiState.currency.displayName} (${uiState.currency.symbol})",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.Default.ArrowDropDown,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                
+                androidx.compose.material3.DropdownMenu(
+                    expanded = expanded.value,
+                    onDismissRequest = { expanded.value = false },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Currency.entries.forEach { currency ->
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = currency.symbol,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = currency.displayName,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    if (uiState.currency == currency) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            },
+                            onClick = {
+                                viewModel.setCurrency(currency)
+                                expanded.value = false
+                            }
                         )
                     }
                 }
             }
+        }
+    }
+}
 
-            // About Section
             item {
                 SettingsSection(
                     title = "About",
-                    subtitle = "App information and setup"
+                    subtitle = "App information and Google Sheets setup"
                 ) {
-                    Column {
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = Shapes.medium,
@@ -180,10 +262,8 @@ fun SettingsScreen(
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(Spacing.sm))
-
                         OutlinedButton(
-                            onClick = { showInfoDialog = true },
+                            onClick = { showInfoDialog.value = true },
                             modifier = Modifier.fillMaxWidth(),
                             shape = Shapes.medium
                         ) {
@@ -195,51 +275,33 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(Spacing.sm))
                             Text("Setup Guide")
                         }
+
+                        Text(
+                            text = "Budget, sync status, and manual refresh now live on the home screen for quicker access.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Google Sheets sync requires proper configuration. Make sure to share your spreadsheet with the service account email as Editor.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
-            }
-
-            // Refresh Action
-            item {
-                Button(
-                    onClick = {
-                        viewModel.loadExpenses()
-                        viewModel.loadCategories()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = Shapes.medium,
-                    colors = ButtonDefaults.buttonColors()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(Spacing.sm))
-                    Text("Refresh Data")
-                }
-            }
-
-            item {
-                Text(
-                    text = "Google Sheets sync requires proper configuration. Make sure to share your spreadsheet with the service account email as Editor.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
 
-    if (showInfoDialog) {
+    if (showInfoDialog.value) {
         AlertDialog(
-            onDismissRequest = { showInfoDialog = false },
+            onDismissRequest = { showInfoDialog.value = false },
             title = { Text("Google Sheets Setup Guide") },
             text = {
                 Column(
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm)
                 ) {
                     SetupStep(number = "1", text = "Create a Google Sheet for tracking your expenses.")
-                    SetupStep(number = "2", text = "Add a 'categories' tab with columns: Name, Color, Monthly Budget.")
+                    SetupStep(number = "2", text = "Add a 'categories' tab with columns: Name and Color.")
                     SetupStep(number = "3", text = "Share the sheet with your service account email as Editor.")
                     SetupStep(number = "4", text = "Copy the spreadsheet ID from the URL.")
                     SetupStep(number = "5", text = "Add your credentials to the app configuration.")
@@ -247,62 +309,13 @@ fun SettingsScreen(
             },
             confirmButton = {
                 Button(
-                    onClick = { showInfoDialog = false },
+                    onClick = { showInfoDialog.value = false },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Got it!")
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun StatusCard(
-    currentMonthSheet: String,
-    entryCount: Int,
-    totalAmount: Double,
-    categoryCount: Int
-) {
-    Card(
-        shape = CardShape,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
-            Spacer(modifier = Modifier.height(20.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun StatusMetric(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        modifier = modifier,
-        shape = Shapes.medium,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-    ) {
-        Column(
-            modifier = Modifier.padding(Spacing.md),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
     }
 }
 
@@ -328,6 +341,7 @@ private fun SettingsSection(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ThemeOption(
     title: String,

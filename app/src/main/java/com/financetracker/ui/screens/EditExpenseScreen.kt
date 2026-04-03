@@ -24,7 +24,11 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -53,6 +57,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.financetracker.data.model.Expense
+import com.financetracker.ui.theme.CardShape
+import com.financetracker.ui.theme.FinanceSectionHeader
 import com.financetracker.ui.theme.Shapes
 import com.financetracker.ui.theme.Spacing
 import com.financetracker.ui.theme.categoryColor
@@ -129,7 +135,7 @@ fun EditExpenseScreen(
 
     val context = LocalContext.current
     val categories = uiState.categoryState.categories
-    val paymentMethods = listOf("Cash", "Card", "UPI", "Bank Transfer", "Wallet", "Other")
+    val accountOptions = listOf("Cash", "Bank", "UPI", "Credit Card", "Debit Card", "Wallet", "Other")
 
     val datePickerDialog = DatePickerDialog(
         context,
@@ -310,7 +316,7 @@ fun EditExpenseScreen(
                             .menuAnchor(),
                         shape = Shapes.medium
                     )
-                    ExposedDropdownMenu(
+                    DropdownMenu(
                         expanded = categoryExpanded,
                         onDismissRequest = { categoryExpanded = false }
                     ) {
@@ -376,7 +382,7 @@ fun EditExpenseScreen(
                         value = paymentMethod,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Payment Method") },
+                        label = { Text("Account") },
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(expanded = paymentExpanded)
                         },
@@ -385,22 +391,26 @@ fun EditExpenseScreen(
                             .menuAnchor(),
                         shape = Shapes.medium
                     )
-                    ExposedDropdownMenu(
+                    DropdownMenu(
                         expanded = paymentExpanded,
                         onDismissRequest = { paymentExpanded = false }
                     ) {
-                        paymentMethods.forEach { method ->
+                        accountOptions.forEach { method ->
                             DropdownMenuItem(
                                 text = {
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check.takeIf { paymentMethod == method },
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                                        if (paymentMethod == method) {
+                                            Icon(
+                                                imageVector = Icons.Default.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        } else {
+                                            Spacer(modifier = Modifier.size(16.dp))
+                                        }
                                         Text(method)
                                     }
                                 },
@@ -425,6 +435,32 @@ fun EditExpenseScreen(
                 )
             }
         }
+    }
+
+    if (showDeleteDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Expense") },
+            text = {
+                Text("Delete this transaction now? You will be able to undo it from the dashboard.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteExpense(expense.id)
+                        showDeleteDialog = false
+                        onNavigateBack()
+                    }
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

@@ -43,8 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.financetracker.data.model.Category
 import java.text.NumberFormat
-import java.util.Currency
 import java.util.Locale
+import com.financetracker.data.model.Currency as AppCurrency
 
 // Shape Definitions
 val Shapes = ShapeFamily(
@@ -83,23 +83,27 @@ val CardElevation = 1.dp
 val CardBorderWidth = 1.dp
 
 // Currency Formatting
-fun formatCurrency(amount: Double): String {
+fun formatCurrency(amount: Double, currency: AppCurrency = AppCurrency.getDefault()): String {
     val format = NumberFormat.getCurrencyInstance(Locale("en", "IN"))
-    format.currency = Currency.getInstance("INR")
+    format.currency = java.util.Currency.getInstance(currency.code)
+    format.maximumFractionDigits = when (currency) {
+        AppCurrency.JPY, AppCurrency.CNY -> 0
+        else -> 2
+    }
     return format.format(amount)
 }
 
-fun formatCurrencyRounded(amount: Double): String {
+fun formatCurrencyRounded(amount: Double, currency: AppCurrency = AppCurrency.getDefault()): String {
     val roundedAmount = Math.round(amount)
     return if (roundedAmount >= 1000) {
         val thousands = roundedAmount / 1000.0
         if (thousands == thousands.toLong().toDouble()) {
-            "₹${thousands.toLong()}k"
+            "${currency.symbol}${thousands.toLong()}k"
         } else {
-            "₹${String.format(Locale.US, "%.1f", thousands)}k"
+            "${currency.symbol}${String.format(Locale.US, "%.1f", thousands)}k"
         }
     } else {
-        "₹$roundedAmount"
+        "${currency.symbol}$roundedAmount"
     }
 }
 

@@ -205,21 +205,21 @@ val ButtonShape = RoundedCornerShape(12.dp)
 val InputShape = RoundedCornerShape(14.dp)
 
 // Spacing constants
-val ScreenPadding = 20.dp
+val FinanceScreenPadding = 20.dp
 val CardPadding = 20.dp
 val ElementSpacing = 12.dp
 
 // Format currency with proper formatting
-fun formatCurrency(amount: Double): String {
+fun financeFormatCurrency(amount: Double): String {
     return "₹${"%,.2f".format(amount)}"
 }
 
-fun formatCurrencyRounded(amount: Double): String {
+fun financeFormatCurrencyRounded(amount: Double): String {
     return "₹${"%,.0f".format(amount)}"
 }
 
 // Get category color from theme or fallback
-fun categoryColor(category: Category?): Color {
+fun financeCategoryColor(category: Category?): Color {
     if (category == null) return PrimaryBlue
     
     return when (category.name.lowercase()) {
@@ -491,7 +491,7 @@ fun FinanceTrackerTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = appTypography,
+        typography = FinanceTypography,
         content = content
     )
 }
