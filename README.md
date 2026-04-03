@@ -1,6 +1,6 @@
 # Finance Tracker
 
-Finance Tracker is an Android personal finance app built with Kotlin and Jetpack Compose. It is designed for people who want a clean mobile expense tracker while keeping their data in Google Sheets instead of a custom backend.
+Finance Tracker is an Android personal finance app built with Kotlin and Jetpack Compose. It is meant for people who want a clean expense tracker on their phone while keeping their data in Google Sheets instead of building a custom backend.
 
 The app can:
 
@@ -56,7 +56,7 @@ This repo does not include usable credentials anymore. You need to create your o
 - a Google Cloud service account
 - a service account JSON key file
 
-You also need to set your own spreadsheet ID in `app/build.gradle.kts`.
+You also need to replace the placeholder spreadsheet ID in `app/build.gradle.kts`.
 
 ## 1. Create The Google Sheet
 
@@ -180,7 +180,7 @@ If you skip this, the app will not be able to read or write data.
 
 ### Spreadsheet ID
 
-Open `app/build.gradle.kts` and set:
+Open `app/build.gradle.kts` and replace the placeholder with your real spreadsheet ID:
 
 ```kotlin
 buildConfigField("String", "SPREADSHEET_ID", "\"YOUR_SPREADSHEET_ID_HERE\"")
@@ -188,7 +188,7 @@ buildConfigField("String", "SPREADSHEET_ID", "\"YOUR_SPREADSHEET_ID_HERE\"")
 
 ### Service account key
 
-Create this file locally:
+Create this file locally on your machine:
 
 ```text
 app/src/main/assets/service-account-key.json
@@ -201,7 +201,7 @@ Important:
 - do not commit this file
 - if you ever committed a real key before, rotate it in Google Cloud and generate a new one
 
-The app also supports a `SERVICE_ACCOUNT_JSON` build config string, but the assets file is much easier to manage during development.
+The app also supports a `SERVICE_ACCOUNT_JSON` build config string, but the assets file is much easier to manage during development. Keep it local and out of git.
 
 ## 6. Open The Project
 
@@ -346,16 +346,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-pixel-debug.ps1
 
 ```text
 app/src/main/java/com/financetracker/
-├── MainActivity.kt
-├── data/
-│   ├── model/
-│   └── repository/
-├── ui/
-│   ├── navigation/
-│   ├── screens/
-│   ├── theme/
-│   └── viewmodel/
-└── workmanager/
+|-- MainActivity.kt
+|-- data/
+|   |-- model/
+|   `-- repository/
+|-- ui/
+|   |-- navigation/
+|   |-- screens/
+|   |-- theme/
+|   `-- viewmodel/
+`-- workmanager/
 ```
 
 Key files:
@@ -372,7 +372,7 @@ Key files:
 
 Check all of these:
 
-- `SPREADSHEET_ID` is not blank
+- `SPREADSHEET_ID` in `app/build.gradle.kts` has been replaced and is not still `YOUR_SPREADSHEET_ID_HERE`
 - `service-account-key.json` exists in `app/src/main/assets/`
 - Sheets API is enabled in Google Cloud
 - the spreadsheet is shared with the service account email as `Editor`
@@ -407,7 +407,7 @@ Check:
 
 ## Final Notes
 
-This project is set up so someone else can clone it, add their own credentials, point it at their own spreadsheet, and run it on either a physical Android phone or a laptop emulator without needing any extra backend.
+This project is set up so someone else can clone it, add their own local credentials, point it at their own spreadsheet, and run it on either a physical Android phone or a laptop emulator without needing any extra backend.
 
 If you are handing this project to another developer, the only local pieces they need to create are:
 

@@ -20,7 +20,7 @@ android {
         }
 
         // Set your own spreadsheet ID before using live sync
-        buildConfigField("String", "SPREADSHEET_ID", "\"\"")
+        buildConfigField("String", "SPREADSHEET_ID", "\"YOUR_SPREADSHEET_ID_HERE\"")
         buildConfigField("String", "SERVICE_ACCOUNT_JSON", "\"\"")
     }
 
