@@ -783,10 +783,17 @@ private fun buildYearlyTrendPoints(expenses: List<Expense>, incomeEntries: List<
 private fun BudgetVsActualCard(
     categories: List<Category>,
     expenses: List<Expense>,
-    monthlyIncome: Double
+    monthlyIncome: Double,
+    categoryBudgets: List<com.financetracker.data.model.CategoryBudget> = emptyList()
 ) {
+    val currentPeriod = YearMonth.now().toString()
+    val budgetsByCategory = categoryBudgets
+        .filter { it.period == currentPeriod }
+        .associateBy { it.category }
     val spendByCategory = expenses.groupBy { it.category }.mapValues { (_, entries) -> entries.sumOf { it.amount } }
-    val trackedCategories = categories.filter { (it.monthlyBudget ?: 0.0) > 0.0 || (spendByCategory[it.name] ?: 0.0) > 0.0 }
+    val trackedCategories = categories.filter { 
+        (budgetsByCategory[it.name]?.amount ?: 0.0) > 0.0 || (spendByCategory[it.name] ?: 0.0) > 0.0 
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -802,14 +809,14 @@ private fun BudgetVsActualCard(
 
             if (trackedCategories.isEmpty()) {
                 Text(
-                    text = "No category budgets are configured yet. Tap a category to set one.",
+                    text = "No category budgets are configured yet. Tap a category in the Categories screen to set one.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
                 trackedCategories.forEach { category ->
                     val spent = spendByCategory[category.name] ?: 0.0
-                    val budget = category.monthlyBudget ?: 0.0
+                    val budget = budgetsByCategory[category.name]?.amount ?: 0.0
                     val progress = if (budget > 0.0) (spent / budget).toFloat().coerceIn(0f, 1f) else 0f
                     val accent = categoryColor(category)
 

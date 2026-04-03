@@ -3,6 +3,7 @@ package com.financetracker.data.repository
 import android.content.Context
 import com.financetracker.BuildConfig
 import com.financetracker.data.model.Category
+import com.financetracker.data.model.CategoryBudget
 import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
@@ -40,6 +41,7 @@ class GoogleSheetsRepository(private val context: Context) {
     companion object {
         private const val CATEGORIES_SHEET = "categories"
         private const val INCOME_SHEET = "monthly_income"
+        private const val CATEGORY_BUDGETS_SHEET = "category_budgets"
         private const val RECURRING_SHEET = "recurring_entries"
         private const val SERVICE_ACCOUNT_ASSET = "service-account-key.json"
         private const val PLACEHOLDER_SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_HERE"
@@ -53,16 +55,16 @@ class GoogleSheetsRepository(private val context: Context) {
         private val EXPENSE_SHEET_REGEX = Regex("""expenses_\d{4}_\d{2}""")
 
         private val DEFAULT_CATEGORIES = listOf(
-            Category("Food", "#FF5722", "restaurant", 8000.0),
-            Category("Transport", "#2196F3", "directions_car", 4000.0),
-            Category("Shopping", "#E91E63", "shopping_bag", 6000.0),
-            Category("Bills", "#9C27B0", "receipt", 5000.0),
-            Category("Entertainment", "#FF9800", "movie", 3000.0),
-            Category("Health", "#4CAF50", "local_hospital", 2500.0),
-            Category("Education", "#3F51B5", "school", 3500.0),
-            Category("Investment", "#10B981", "savings", 7000.0),
-            Category("Family Support", "#F97316", "favorite", 5000.0),
-            Category("Other", "#607D8B", "more_horiz", 2000.0)
+            Category("Food", "#FF5722", "restaurant"),
+            Category("Transport", "#2196F3", "directions_car"),
+            Category("Shopping", "#E91E63", "shopping_bag"),
+            Category("Bills", "#9C27B0", "receipt"),
+            Category("Entertainment", "#FF9800", "movie"),
+            Category("Health", "#4CAF50", "local_hospital"),
+            Category("Education", "#3F51B5", "school"),
+            Category("Investment", "#10B981", "savings"),
+            Category("Family Support", "#F97316", "favorite"),
+            Category("Other", "#607D8B", "more_horiz")
         )
 
         private val EXPENSE_HEADERS = listOf(
@@ -84,7 +86,8 @@ class GoogleSheetsRepository(private val context: Context) {
             "Occurrence Period"
         )
 
-        private val CATEGORY_HEADERS = listOf("Name", "Color", "Monthly Budget")
+        private val CATEGORY_HEADERS = listOf("Name", "Color")
+        private val CATEGORY_BUDGET_HEADERS = listOf("Category", "Period", "Amount")
         private val INCOME_HEADERS = listOf("Month", "Income", "Recurring ID")
         private val RECURRING_HEADERS = listOf(
             "ID",
@@ -280,7 +283,7 @@ class GoogleSheetsRepository(private val context: Context) {
         ensureCategoriesSheet(service)
 
         val rows = service.spreadsheets().values()
-            .get(spreadsheetId, "$CATEGORIES_SHEET!A2:C")
+            .get(spreadsheetId, "$CATEGORIES_SHEET!A2:B")
             .execute()
             .getValues()
             .orEmpty()
@@ -294,53 +297,25 @@ class GoogleSheetsRepository(private val context: Context) {
             Category(
                 name = row.valueAt(0),
                 color = row.valueAt(1).ifBlank { "#607D8B" },
-                icon = "default",
-                monthlyBudget = row.valueAt(2).toDoubleOrNull()
+                icon = "default"
             )
         }
     }
 
-    suspend fun addCategory(category: Category): Boolean = withContext(Dispatchers.IO) {
-        val service = getSheetsService() ?: return@withContext false
-        ensureCategoriesSheet(service)
-
-        service.spreadsheets().values()
-            .append(
-                spreadsheetId,
-                "$CATEGORIES_SHEET!A:C",
-                ValueRange().setValues(
-                    listOf(
-                        listOf(
-                            category.name,
-                            category.color,
-                            category.monthlyBudget?.toString().orEmpty()
-                        )
-                    )
-                )
-            )
-            .setValueInputOption("RAW")
-            .execute()
-
-        true
-    }
-
-    suspend fun updateCategoryBudget(category: Category): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Update the color for an existing category.
+     */
+    suspend fun updateCategoryColor(categoryName: String, newColor: String): Boolean = withContext(Dispatchers.IO) {
         val service = getSheetsService() ?: return@withContext false
         ensureCategoriesSheet(service)
 
         val rows = service.spreadsheets().values()
-            .get(spreadsheetId, "$CATEGORIES_SHEET!A2:C")
+            .get(spreadsheetId, "$CATEGORIES_SHEET!A2:B")
             .execute()
             .getValues()
             .orEmpty()
 
-        val sanitizedColor = category.color.ifBlank { "#607D8B" }
-        val categoryRow = listOf(
-            category.name,
-            sanitizedColor,
-            category.monthlyBudget?.toString().orEmpty()
-        )
-        val index = rows.indexOfFirst { row -> row.valueAt(0).equals(category.name, ignoreCase = true) }
+        val index = rows.indexOfFirst { row -> row.valueAt(0).equals(categoryName, ignoreCase = true) }
 
         if (index >= 0) {
             val rowNumber = index + 2
@@ -348,13 +323,12 @@ class GoogleSheetsRepository(private val context: Context) {
             service.spreadsheets().values()
                 .update(
                     spreadsheetId,
-                    "$CATEGORIES_SHEET!A$rowNumber:C$rowNumber",
+                    "$CATEGORIES_SHEET!A$rowNumber:B$rowNumber",
                     ValueRange().setValues(
                         listOf(
                             listOf(
-                                existing.valueAt(0).ifBlank { category.name },
-                                existing.valueAt(1).ifBlank { sanitizedColor },
-                                category.monthlyBudget?.toString().orEmpty()
+                                existing.valueAt(0).ifBlank { categoryName },
+                                newColor
                             )
                         )
                     )
@@ -366,6 +340,78 @@ class GoogleSheetsRepository(private val context: Context) {
                 .append(
                     spreadsheetId,
                     "$CATEGORIES_SHEET!A:C",
+                    ValueRange().setValues(listOf(listOf(categoryName, newColor, "")))
+                )
+                .setValueInputOption("RAW")
+                .execute()
+        }
+
+        true
+    }
+
+    suspend fun addCategory(category: Category): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        ensureCategoriesSheet(service)
+
+        service.spreadsheets().values()
+            .append(
+                spreadsheetId,
+                "$CATEGORIES_SHEET!A:B",
+                ValueRange().setValues(
+                    listOf(
+                        listOf(
+                            category.name,
+                            category.color
+                        )
+                    )
+                )
+            )
+            .setValueInputOption("RAW")
+            .execute()
+
+        true
+    }
+
+    suspend fun updateCategory(category: Category): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        ensureCategoriesSheet(service)
+
+        val rows = service.spreadsheets().values()
+            .get(spreadsheetId, "$CATEGORIES_SHEET!A2:B")
+            .execute()
+            .getValues()
+            .orEmpty()
+
+        val sanitizedColor = category.color.ifBlank { "#607D8B" }
+        val categoryRow = listOf(
+            category.name,
+            sanitizedColor
+        )
+        val index = rows.indexOfFirst { row -> row.valueAt(0).equals(category.name, ignoreCase = true) }
+
+        if (index >= 0) {
+            val rowNumber = index + 2
+            val existing = rows[index]
+            service.spreadsheets().values()
+                .update(
+                    spreadsheetId,
+                    "$CATEGORIES_SHEET!A$rowNumber:B$rowNumber",
+                    ValueRange().setValues(
+                        listOf(
+                            listOf(
+                                existing.valueAt(0).ifBlank { category.name },
+                                sanitizedColor
+                            )
+                        )
+                    )
+                )
+                .setValueInputOption("RAW")
+                .execute()
+        } else {
+            service.spreadsheets().values()
+                .append(
+                    spreadsheetId,
+                    "$CATEGORIES_SHEET!A:B",
                     ValueRange().setValues(listOf(categoryRow))
                 )
                 .setValueInputOption("RAW")
@@ -374,6 +420,188 @@ class GoogleSheetsRepository(private val context: Context) {
 
         true
     }
+
+    // ==================== Category Budget Methods ====================
+
+    /**
+     * Fetch all category budgets for a specific period (month).
+     * @param period Format: "YYYY-MM" (e.g., "2024-01")
+     */
+    suspend fun fetchCategoryBudgetsForPeriod(period: String): List<CategoryBudget> = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext emptyList()
+        ensureCategoryBudgetsSheet(service)
+
+        val rows = service.spreadsheets().values()
+            .get(spreadsheetId, "$CATEGORY_BUDGETS_SHEET!A2:C")
+            .execute()
+            .getValues()
+            .orEmpty()
+
+        rows.mapIndexedNotNull { index, row ->
+            val category = row.valueAt(0)
+            val budgetPeriod = row.valueAt(1)
+            val amount = row.valueAt(2).toDoubleOrNull()
+
+            if (category.isBlank() || budgetPeriod.isBlank() || amount == null) {
+                null
+            } else if (normalizePeriod(budgetPeriod) == period) {
+                CategoryBudget(
+                    id = "${category}_$period",
+                    category = category,
+                    period = normalizePeriod(budgetPeriod),
+                    amount = amount,
+                    sheetRowIndex = index + 2
+                )
+            } else {
+                null
+            }
+        }
+    }
+
+    /**
+     * Fetch all category budgets (all periods).
+     */
+    suspend fun fetchAllCategoryBudgets(): List<CategoryBudget> = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext emptyList()
+        ensureCategoryBudgetsSheet(service)
+
+        val rows = service.spreadsheets().values()
+            .get(spreadsheetId, "$CATEGORY_BUDGETS_SHEET!A2:C")
+            .execute()
+            .getValues()
+            .orEmpty()
+
+        rows.mapIndexedNotNull { index, row ->
+            val category = row.valueAt(0)
+            val period = row.valueAt(1)
+            val amount = row.valueAt(2).toDoubleOrNull()
+
+            if (category.isBlank() || period.isBlank() || amount == null) {
+                null
+            } else {
+                CategoryBudget(
+                    id = "${category}_${normalizePeriod(period)}",
+                    category = category,
+                    period = normalizePeriod(period),
+                    amount = amount,
+                    sheetRowIndex = index + 2
+                )
+            }
+        }
+    }
+
+    /**
+     * Upsert (insert or update) a category budget for a specific period.
+     */
+    suspend fun upsertCategoryBudget(
+        category: String,
+        period: String,
+        amount: Double?
+    ): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        ensureCategoryBudgetsSheet(service)
+
+        val normalizedPeriod = normalizePeriod(period)
+        val existingBudget = findCategoryBudgetRow(service, category, normalizedPeriod)
+
+        if (amount == null || amount <= 0.0) {
+            // Delete existing budget if amount is null or zero
+            if (existingBudget != null && existingBudget.sheetRowIndex > 1) {
+                deleteCategoryBudgetRow(service, existingBudget.sheetRowIndex)
+            }
+            return@withContext true
+        }
+
+        val row = listOf(
+            category.trim(),
+            normalizedPeriod,
+            amount.toString()
+        )
+
+        if (existingBudget != null && existingBudget.sheetRowIndex > 1) {
+            // Update existing row
+            service.spreadsheets().values()
+                .update(
+                    spreadsheetId,
+                    "$CATEGORY_BUDGETS_SHEET!A${existingBudget.sheetRowIndex}:C${existingBudget.sheetRowIndex}",
+                    ValueRange().setValues(listOf(row))
+                )
+                .setValueInputOption("RAW")
+                .execute()
+        } else {
+            // Append new row
+            service.spreadsheets().values()
+                .append(
+                    spreadsheetId,
+                    "$CATEGORY_BUDGETS_SHEET!A:C",
+                    ValueRange().setValues(listOf(row))
+                )
+                .setValueInputOption("RAW")
+                .execute()
+        }
+
+        true
+    }
+
+    private fun ensureCategoryBudgetsSheet(service: Sheets): SheetProperties {
+        return ensureSheetExists(service, CATEGORY_BUDGETS_SHEET, CATEGORY_BUDGET_HEADERS)
+    }
+
+    private suspend fun findCategoryBudgetRow(
+        service: Sheets,
+        category: String,
+        period: String
+    ): CategoryBudget? = withContext(Dispatchers.IO) {
+        val rows = service.spreadsheets().values()
+            .get(spreadsheetId, "$CATEGORY_BUDGETS_SHEET!A2:C")
+            .execute()
+            .getValues()
+            .orEmpty()
+
+        rows.mapIndexedNotNull { index, row ->
+            val rowCategory = row.valueAt(0)
+            val rowPeriod = row.valueAt(1)
+
+            if (rowCategory.equals(category, ignoreCase = true) && normalizePeriod(rowPeriod) == period) {
+                CategoryBudget(
+                    id = "${category}_$period",
+                    category = rowCategory,
+                    period = normalizePeriod(rowPeriod),
+                    amount = row.valueAt(2).toDoubleOrNull() ?: 0.0,
+                    sheetRowIndex = index + 2
+                )
+            } else {
+                null
+            }
+        }.firstOrNull()
+    }
+
+    private suspend fun deleteCategoryBudgetRow(service: Sheets, rowIndex: Int): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val sheetId = ensureCategoryBudgetsSheet(service).sheetId ?: return@withContext false
+            val deleteRequest = Request().setDeleteDimension(
+                DeleteDimensionRequest().setRange(
+                    DimensionRange()
+                        .setSheetId(sheetId)
+                        .setDimension("ROWS")
+                        .setStartIndex(rowIndex - 1)
+                        .setEndIndex(rowIndex)
+                )
+            )
+
+            service.spreadsheets().batchUpdate(
+                spreadsheetId,
+                BatchUpdateSpreadsheetRequest().setRequests(listOf(deleteRequest))
+            ).execute()
+
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+
+    // ==================== End Category Budget Methods ====================
 
     suspend fun fetchAllExpenses(): List<Expense> = withContext(Dispatchers.IO) {
         val service = getSheetsService() ?: return@withContext emptyList()
@@ -676,13 +904,12 @@ class GoogleSheetsRepository(private val context: Context) {
         val rows = DEFAULT_CATEGORIES.map { category ->
             listOf(
                 category.name,
-                category.color,
-                category.monthlyBudget?.toString().orEmpty()
+                category.color
             )
         }
 
         service.spreadsheets().values()
-            .append(spreadsheetId, "$CATEGORIES_SHEET!A2:C", ValueRange().setValues(rows))
+            .append(spreadsheetId, "$CATEGORIES_SHEET!A2:B", ValueRange().setValues(rows))
             .setValueInputOption("RAW")
             .execute()
     }
@@ -1124,7 +1351,6 @@ class GoogleSheetsRepository(private val context: Context) {
             put("name", name)
             put("color", color)
             put("icon", icon)
-            put("monthlyBudget", monthlyBudget)
         }
     }
 
@@ -1201,8 +1427,7 @@ class GoogleSheetsRepository(private val context: Context) {
         return Category(
             name = optString("name"),
             color = optString("color"),
-            icon = optString("icon", "default"),
-            monthlyBudget = optString("monthlyBudget").toDoubleOrNull()
+            icon = optString("icon", "default")
         )
     }
 

@@ -88,6 +88,7 @@ import com.financetracker.ui.viewmodel.ExpenseViewModel
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -129,10 +130,13 @@ fun DashboardScreen(
     val spendByCategory = uiState.expenses
         .groupBy { it.category }
         .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
+    val categoryBudgetsByCategory = uiState.categoryBudgets
+        .filter { it.period == parseCurrentPeriodFromSheet(uiState.currentMonthSheet).toString() }
+        .associateBy { it.category }
     val highlightedCategories = uiState.categoryState.categories
         .sortedWith(
             compareByDescending<Category> { spendByCategory[it.name] ?: 0.0 }
-                .thenByDescending { it.monthlyBudget ?: 0.0 }
+                .thenByDescending { categoryBudgetsByCategory[it.name]?.amount ?: 0.0 }
                 .thenBy { it.name }
         )
         .take(4)
@@ -1453,4 +1457,9 @@ private fun sortComparator(option: TransactionSortOption): Comparator<Expense> {
         TransactionSortOption.CATEGORY -> compareBy<Expense> { it.category.lowercase(Locale.getDefault()) }.thenByDescending { it.date }
         TransactionSortOption.ACCOUNT -> compareBy<Expense> { it.paymentMethod.lowercase(Locale.getDefault()) }.thenByDescending { it.date }
     }
+}
+
+private fun parseCurrentPeriodFromSheet(sheetName: String): YearMonth {
+    val rawPeriod = sheetName.removePrefix("expenses_").replace("_", "-")
+    return runCatching { YearMonth.parse(rawPeriod) }.getOrElse { YearMonth.now() }
 }

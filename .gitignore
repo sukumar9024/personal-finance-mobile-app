@@ -15,6 +15,7 @@ gen/
 out/
 captures/
 .output/
+.kotlin
 
 # Gradle files
 .gradle/

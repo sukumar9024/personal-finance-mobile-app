@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.financetracker.data.model.Category
+import com.financetracker.data.model.CategoryBudget
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
 import com.financetracker.data.model.RecurringEntry
@@ -56,6 +57,7 @@ data class FinanceTrackerUiState(
     val recurringEntries: List<RecurringEntry> = emptyList(),
     val monthlyIncome: Double = 0.0,
     val categoryState: CategoryState = CategoryState(),
+    val categoryBudgets: List<CategoryBudget> = emptyList(),
     val currentMonthSheet: String = "",
     val totalAmount: Double = 0.0,
     val isLoading: Boolean = false,
@@ -346,35 +348,37 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun updateCategoryBudget(name: String, monthlyBudget: Double?) {
+    /**
+     * Update category budget for a specific month.
+     * @param name Category name
+     * @param period Period in YYYY-MM format
+     * @param amount Budget amount (null or 0 to remove budget)
+     */
+    fun updateCategoryBudgetForMonth(name: String, period: String, amount: Double?) {
         val normalizedName = name.trim()
+        val normalizedPeriod = runCatching { YearMonth.parse(period.trim()).toString() }.getOrDefault(period.trim())
         if (normalizedName.isBlank()) return
 
         val existingState = _uiState.value
-        val updatedCategories = existingState.categoryState.categories.map {
-            if (it.name.equals(normalizedName, ignoreCase = true)) {
-                it.copy(monthlyBudget = monthlyBudget)
-            } else {
-                it
-            }
+        
+        // Update local state immediately
+        val updatedBudgets = existingState.categoryBudgets.filter { 
+            !(it.category.equals(normalizedName, ignoreCase = true) && it.period == normalizedPeriod)
+        }.toMutableList()
+        
+        if (amount != null && amount > 0.0) {
+            updatedBudgets.add(
+                CategoryBudget(
+                    id = "${normalizedName}_$normalizedPeriod",
+                    category = normalizedName,
+                    period = normalizedPeriod,
+                    amount = amount
+                )
+            )
         }
-        val updatedCategory = updatedCategories.firstOrNull {
-            it.name.equals(normalizedName, ignoreCase = true)
-        } ?: Category(
-            name = normalizedName,
-            color = suggestedColorFor(normalizedName),
-            icon = "default",
-            monthlyBudget = monthlyBudget
-        )
-        val categoryState = existingState.categoryState.copy(
-            categories = if (updatedCategories.any { it.name.equals(normalizedName, ignoreCase = true) }) {
-                updatedCategories
-            } else {
-                mergeWithDefaultCategories(existingState.categoryState.categories + updatedCategory)
-            }
-        )
+        
         val optimisticState = existingState.copy(
-            categoryState = categoryState,
+            categoryBudgets = updatedBudgets,
             errorMessage = null
         )
 
@@ -394,7 +398,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             runCatching {
-                repository.updateCategoryBudget(updatedCategory)
+                repository.upsertCategoryBudget(normalizedName, normalizedPeriod, amount)
             }.onSuccess { didSave ->
                 if (didSave) {
                     refreshAllData()
@@ -402,7 +406,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     updateLocalState(
                         optimisticState.copy(
                             syncStatus = buildSyncStatus(isUsingCachedData = true),
-                            errorMessage = "Failed to save category budget to Google Sheets. Budget is still available locally."
+                            errorMessage = "Failed to save category budget to Google Sheets."
                         )
                     )
                 }
@@ -411,11 +415,77 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     optimisticState.copy(
                         syncStatus = buildSyncStatus(isUsingCachedData = true),
                         errorMessage = error.message
-                            ?: "Cannot connect to spreadsheet. Budget saved locally. Check if service account has access."
+                            ?: "Cannot connect to spreadsheet. Budget saved locally."
                     )
                 )
             }
         }
+    }
+
+    /**
+     * Update the color for a category. This applies globally for all instances.
+     */
+    fun updateCategoryColor(name: String, newColor: String) {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return
+
+        val existingState = _uiState.value
+        val updatedCategories = existingState.categoryState.categories.map {
+            if (it.name.equals(normalizedName, ignoreCase = true)) {
+                it.copy(color = newColor)
+            } else {
+                it
+            }
+        }
+        val categoryState = existingState.categoryState.copy(categories = updatedCategories)
+        val optimisticState = existingState.copy(
+            categoryState = categoryState,
+            errorMessage = null
+        )
+
+        if (!repository.isReadyForLiveSync()) {
+            updateLocalState(
+                optimisticState.copy(
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        updateLocalState(optimisticState.copy(syncStatus = buildSyncStatus(isUsingCachedData = false)))
+
+        viewModelScope.launch {
+            runCatching {
+                repository.updateCategoryColor(normalizedName, newColor)
+            }.onSuccess { didSave ->
+                if (didSave) {
+                    refreshAllData()
+                } else {
+                    updateLocalState(
+                        optimisticState.copy(
+                            syncStatus = buildSyncStatus(isUsingCachedData = true),
+                            errorMessage = "Failed to save category color to Google Sheets."
+                        )
+                    )
+                }
+            }.onFailure { error ->
+                updateLocalState(
+                    optimisticState.copy(
+                        syncStatus = buildSyncStatus(isUsingCachedData = true),
+                        errorMessage = error.message
+                            ?: "Cannot connect to spreadsheet. Color saved locally."
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Legacy method - redirects to updateCategoryBudgetForMonth for current month.
+     */
+    fun updateCategoryBudget(name: String, monthlyBudget: Double?) {
+        updateCategoryBudgetForMonth(name, periodFromSheetName(currentSheetName()), monthlyBudget)
     }
 
     fun addCategory(name: String, color: String) {
@@ -425,8 +495,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         val category = Category(
             name = normalizedName,
             color = color.takeIf { it.isNotBlank() } ?: suggestedColorFor(normalizedName),
-            icon = "default",
-            monthlyBudget = null
+            icon = "default"
         )
 
         if (!repository.isReadyForLiveSync()) {
@@ -536,13 +605,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 val reportExpensesDeferred = async { runCatching { repository.fetchAllExpenses() } }
                 val incomeEntriesDeferred = async { runCatching { repository.fetchIncomeEntries() } }
                 val recurringDeferred = async { runCatching { repository.fetchRecurringEntries() } }
+                val categoryBudgetsDeferred = async { runCatching { repository.fetchAllCategoryBudgets() } }
 
                 RefreshResults(
                     categories = categoriesDeferred.await(),
                     expenses = expensesDeferred.await(),
                     reportExpenses = reportExpensesDeferred.await(),
                     incomeEntries = incomeEntriesDeferred.await(),
-                    recurringEntries = recurringDeferred.await()
+                    recurringEntries = recurringDeferred.await(),
+                    categoryBudgets = categoryBudgetsDeferred.await()
                 )
             }
 
@@ -588,6 +659,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 val updatedState = existingState.copy(
                     currentMonthSheet = currentSheet,
                     categoryState = CategoryState(categories = categories, isLoading = false),
+                    categoryBudgets = refreshResults.categoryBudgets.getOrDefault(existingState.categoryBudgets),
                     expenses = expenses.sortedByDescending { it.date },
                     reportExpenses = reportExpenses.sortedWith(compareByDescending<Expense> { it.date }.thenByDescending { it.modifiedAt }),
                     incomeEntries = incomeEntries.sortedByDescending { it.period },
@@ -706,6 +778,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         return runCatching { YearMonth.parse(rawPeriod).toString() }.getOrDefault(rawPeriod)
     }
 
+    private fun periodFromSheetName(sheetName: String): String {
+        return periodFromSheet(sheetName)
+    }
+
     private fun buildOverspendingAlert(
         categories: List<Category>,
         monthlyIncome: Double,
@@ -723,16 +799,23 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             .filterNot { it.isTransfer }
             .groupBy { it.category }
             .mapValues { (_, entries) -> entries.sumOf { it.amount } }
+        val currentMonth = YearMonth.from(LocalDate.now())
+        val currentPeriod = currentMonth.toString()
+        val categoryBudgetsByCategory = _uiState.value.categoryBudgets
+            .filter { it.period == currentPeriod }
+            .associateBy { it.category }
+        
         val overspentCategory = categories.firstOrNull { category ->
-            val budget = category.monthlyBudget ?: 0.0
+            val budget = categoryBudgetsByCategory[category.name]?.amount ?: 0.0
             budget > 0.0 && (spendByCategory[category.name] ?: 0.0) > budget
         }
 
         return overspentCategory?.let { category ->
             val spent = spendByCategory[category.name] ?: 0.0
+            val budget = categoryBudgetsByCategory[category.name]?.amount
             OverspendingAlert(
                 title = "${category.name} budget exceeded",
-                message = "${category.name} spending is ${spent.toDisplayAmount()} against ${category.monthlyBudget?.toDisplayAmount().orEmpty()}."
+                message = "${category.name} spending is ${spent.toDisplayAmount()} against ${budget?.toDisplayAmount().orEmpty()}."
             )
         }
     }
@@ -771,7 +854,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         val expenses: Result<List<Expense>>,
         val reportExpenses: Result<List<Expense>>,
         val incomeEntries: Result<List<IncomeEntry>>,
-        val recurringEntries: Result<List<RecurringEntry>>
+        val recurringEntries: Result<List<RecurringEntry>>,
+        val categoryBudgets: Result<List<CategoryBudget>>
     )
 }
 
