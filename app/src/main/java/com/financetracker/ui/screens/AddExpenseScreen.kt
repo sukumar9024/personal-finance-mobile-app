@@ -19,7 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -61,8 +61,7 @@ import androidx.compose.ui.unit.dp
 import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.TransactionType
-import com.financetracker.ui.theme.CardShape
-import com.financetracker.ui.theme.FinanceSectionHeader
+import com.financetracker.ui.theme.SectionHeader
 import com.financetracker.ui.theme.Shapes
 import com.financetracker.ui.theme.Spacing
 import com.financetracker.ui.theme.categoryColor
@@ -80,6 +79,7 @@ private enum class EntryMode(val label: String) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("DEPRECATION")
 @Composable
 fun AddExpenseScreen(
     viewModel: ExpenseViewModel,
@@ -150,7 +150,7 @@ fun AddExpenseScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -622,7 +622,7 @@ internal fun AmountPreviewCard(
     onDateClick: () -> Unit
 ) {
     Card(
-        shape = CardShape,
+        shape = Shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -671,12 +671,12 @@ internal fun InputSection(
     content: @Composable () -> Unit
 ) {
     Card(
-        shape = CardShape,
+        shape = Shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            SectionHeader(title = title, subtitle = subtitle)
             Spacer(modifier = Modifier.height(20.dp))
             content()
         }

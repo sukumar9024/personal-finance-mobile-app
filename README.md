@@ -1,134 +1,166 @@
-# Finance Tracker
+# Finance Tracker (SC)
 
-Finance Tracker is an Android personal finance app built with Kotlin and Jetpack Compose. It is meant for people who want a clean expense tracker on their phone while keeping their data in Google Sheets instead of building a custom backend.
+Finance Tracker ("SC") is a modern Android personal finance app built with Kotlin and Jetpack Compose. It helps you track expenses, manage budgets, and sync your data with Google Sheets—all while keeping your data private and under your control.
 
-The app can:
+## App Icon
 
-- track expenses, transfers, monthly income, and recurring entries
-- organize spending by category and budget
-- show dashboard and report views
-- sync live with Google Sheets when credentials are configured
-- fall back to cached data when Sheets is not configured or unavailable
-- remember theme and currency preferences locally
+The app features a clean "SC" logo with a professional blue-to-green gradient background, consistent across all themes.
 
-## What Is In This Project
+## Features
 
-- `app/`: Android app source
-- `app/src/main/java/com/financetracker/`: Kotlin source code
-- `app/src/main/res/`: Android resources
-- `scripts/run-emulator-debug.ps1`: helper script to build, install, and launch on a chosen device
-- `scripts/run-pixel-debug.ps1`: helper script for the Pixel emulator flow
-- `gradlew` and `gradlew.bat`: Gradle wrapper
+### Core Features
+- **Expense Tracking** - Log daily expenses with category, payment method, description, and tags
+- **Transfer Tracking** - Move money between accounts (Cash, Bank, UPI, Credit Card, etc.)
+- **Split Transactions** - Divide a single purchase across multiple categories
+- **Recurring Entries** - Set up automatic monthly income and expenses
+- **Monthly Budget** - Set and track your monthly spending limit
+- **Category Budgets** - Set individual budgets per category with progress tracking
+- **Category Customization** - Add categories and customize colors
 
-Main screens in the app:
+### Dashboard
+- Monthly balance overview with budget progress bar
+- Quick-add transaction card for fast expense logging
+- Top categories summary with spending breakdown
+- Sync status card with refresh button
+- Transaction list with search, category filter, account filter, and sort options
+- Floating action button for adding new transactions
 
-- Dashboard
-- Add Transaction
-- Edit Expense
-- Categories
-- Reports
-- Settings
+### Reports
+- Income vs Spending summary
+- Budget trend charts (monthly/yearly views)
+- Category breakdown with percentages
+- Budget vs Actual comparison
+- Month-over-month comparison
+- Top merchants analysis
+- Recurring plans management
+- Month-end forecast based on spending pace
+
+### Settings
+- Theme selection (System, Light, Dark)
+- Multi-currency support with 10 currencies
+- App version info
+- Google Sheets setup guide
+
+### Notifications
+- Overspending alerts when monthly or category budgets are exceeded
+- Push notifications for budget alerts
+
+### Data Sync
+- Live sync with Google Sheets when configured
+- Cached data fallback when Sheets is unavailable
+- Background sync via WorkManager
+- Manual refresh from dashboard
 
 ## Tech Stack
 
-- Kotlin
-- Jetpack Compose
-- Material 3
-- MVVM with `AndroidViewModel`, `StateFlow`, and coroutines
-- Google Sheets API v4
-- WorkManager
-- SharedPreferences for local cache and preferences
+| Component | Technology |
+|---|---|
+| Language | Kotlin |
+| UI Framework | Jetpack Compose |
+| Design System | Material 3 |
+| Architecture | MVVM with ViewModel |
+| Async | Coroutines & StateFlow |
+| Navigation | Jetpack Navigation Compose |
+| Local Storage | SharedPreferences |
+| Background Tasks | WorkManager |
+| Cloud Sync | Google Sheets API v4 |
+| Image Loading | Coil |
 
-## Requirements
+## Minimum Requirements
 
-- Android Studio Hedgehog or newer is recommended
+- Android Studio Hedgehog or newer recommended
 - JDK 17
 - Android SDK installed
-- An emulator or an Android phone with USB debugging enabled
+- An emulator or Android phone with USB debugging enabled
+- API 24 (Android 7.0) or higher
 - A Google account
 - A Google Cloud project with Sheets API enabled
 
-## Before You Run Anything
+## Supported Currencies
 
-This repo does not include usable credentials anymore. You need to create your own:
-
-- a Google spreadsheet
-- a Google Cloud service account
-- a service account JSON key file
-
-You also need to add your spreadsheet ID to `local.properties` using the `spreadsheet.id` key.
-
-## 1. Create The Google Sheet
-
-Create a new spreadsheet in Google Sheets. This app expects a few sheets:
-
-### `categories`
-
-Headers:
-
-| Column | Value |
-|---|---|
-| A | `Name` |
-| B | `Color` |
-| C | `Monthly Budget` |
-
-Suggested starter rows:
-
-| Name | Color | Monthly Budget |
+| Currency | Symbol | Code |
 |---|---|---|
-| Food | `#FF5722` | `8000` |
-| Transport | `#2196F3` | `4000` |
-| Shopping | `#E91E63` | `6000` |
-| Bills | `#9C27B0` | `5000` |
-| Entertainment | `#FF9800` | `3000` |
-| Health | `#4CAF50` | `2500` |
-| Education | `#3F51B5` | `3500` |
-| Investment | `#10B981` | `7000` |
-| Family Support | `#F97316` | `5000` |
-| Other | `#607D8B` | `2000` |
+| Indian Rupee | ₹ | INR (Default) |
+| US Dollar | $ | USD |
+| Euro | € | EUR |
+| British Pound | £ | GBP |
+| Japanese Yen | ¥ | JPY |
+| Chinese Yuan | ¥ | CNY |
+| Australian Dollar | A$ | AUD |
+| Canadian Dollar | C$ | CAD |
+| Singapore Dollar | S$ | SGD |
+| UAE Dirham | د.إ | AED |
 
-### Monthly expense sheets
+## Project Structure
 
-The app creates these automatically when sync is working:
+```
+app/src/main/java/com/financetracker/
+├── MainActivity.kt                    # App entry point
+├── data/
+│   ├── model/
+│   │   ├── Category.kt               # Category data model
+│   │   ├── CategoryBudget.kt         # Budget tracking model
+│   │   ├── Currency.kt               # Multi-currency support
+│   │   ├── Expense.kt                # Expense data model
+│   │   ├── IncomeEntry.kt            # Monthly income model
+│   │   ├── RecurringEntry.kt         # Recurring transactions
+│   │   └── TransactionType.kt        # Transaction type enum
+│   └── repository/
+│       └── GoogleSheetsRepository.kt # Google Sheets sync
+├── ui/
+│   ├── navigation/
+│   │   └── FinanceNavHost.kt         # App navigation
+│   ├── screens/
+│   │   ├── AddExpenseScreen.kt       # Add transaction
+│   │   ├── CategoriesScreen.kt       # Category management
+│   │   ├── DashboardScreen.kt        # Home screen
+│   │   ├── EditExpenseScreen.kt      # Edit expense
+│   │   ├── ReportsScreen.kt          # Charts & reports
+│   │   └── SettingsScreen.kt         # App settings
+│   ├── theme/
+│   │   ├── AppStyle.kt               # Shared styles & formatting
+│   │   └── Theme.kt                  # Material theme
+│   └── viewmodel/
+│       └── ExpenseViewModel.kt       # State management
+└── workmanager/
+    └── BackgroundSyncWorker.kt       # Background sync
+```
 
-- `expenses_YYYY_MM`
+## Setup Instructions
 
-Headers:
+### Before You Run
 
-| Column | Value |
+This repo does not include usable credentials. You need to create your own:
+- A Google spreadsheet
+- A Google Cloud service account
+- A service account JSON key file
+
+### 1. Create The Google Sheet
+
+Create a new spreadsheet in Google Sheets with these sheets:
+
+#### `categories` Sheet
+
+| Column | Header |
 |---|---|
-| A | Date |
-| B | Amount |
-| C | Category |
-| D | Subcategory |
-| E | Description |
-| F | Payment Method |
-| G | Transfer Account |
-| H | Transfer Destination Account |
-| I | Transaction Type |
-| J | Split Group ID |
-| K | Receipt URL |
-| L | Tags |
-| M | Created At |
-| N | Modified At |
-| O | Recurring ID |
-| P | Occurrence Period |
+| A | Name |
+| B | Color |
+| C | Monthly Budget |
 
-### `monthly_income`
+#### Monthly Expense Sheets
 
-Headers:
+Created automatically as `expenses_YYYY_MM` with columns: Date, Amount, Category, Subcategory, Description, Payment Method, Transaction Type, Split Group ID, Tags, Created At, Modified At.
 
-| Column | Value |
+#### `monthly_income` Sheet
+
+| Column | Header |
 |---|---|
 | A | Month |
 | B | Income |
-| C | Recurring ID |
 
-### `recurring_entries`
+#### `recurring_entries` Sheet
 
-Headers:
-
-| Column | Value |
+| Column | Header |
 |---|---|
 | A | ID |
 | B | Title |
@@ -140,180 +172,97 @@ Headers:
 | H | Payment Method |
 | I | Active |
 
-## 2. Get The Spreadsheet ID
+### 2. Get The Spreadsheet ID
 
-From a URL like:
+From URL: `https://docs.google.com/spreadsheets/d/1AbcExampleSpreadsheetId123456/edit#gid=0`
+The ID is: `1AbcExampleSpreadsheetId123456`
 
-```text
-https://docs.google.com/spreadsheets/d/1AbcExampleSpreadsheetId123456/edit#gid=0
-```
+### 3. Create Google Cloud Credentials
 
-the spreadsheet ID is the part between `/d/` and `/edit`.
+1. Go to Google Cloud Console
+2. Create or select a project
+3. Enable `Google Sheets API`
+4. Create a `Service Account`
+5. Generate a `JSON` key file
+6. Download the key file
 
-## 3. Create Google Cloud Credentials
+### 4. Share The Sheet
 
-1. Go to Google Cloud Console.
-2. Create a project or use an existing one.
-3. Enable `Google Sheets API`.
-4. Open `APIs & Services` -> `Credentials`.
-5. Create a `Service Account`.
-6. Open the service account.
-7. Add a new key.
-8. Choose `JSON`.
-9. Download the key file.
+Share the spreadsheet with the service account email as `Editor`.
 
-The JSON contains the service account email. It looks something like:
+### 5. Add Credentials To The App
 
-```text
-something@your-project-id.iam.gserviceaccount.com
-```
+#### Spreadsheet ID
 
-## 4. Share The Sheet With The Service Account
-
-Open the spreadsheet and share it with the service account email as:
-
-- `Editor`
-
-If you skip this, the app will not be able to read or write data.
-
-## 5. Add The Credentials To The App
-
-### Spreadsheet ID
-
-Add your spreadsheet ID to the root `local.properties` file:
-
+Add to root `local.properties`:
 ```text
 spreadsheet.id=YOUR_REAL_SPREADSHEET_ID
 ```
 
-If `local.properties` already exists, keep the existing `sdk.dir` entry and add `spreadsheet.id` on a new line.
+#### Service Account Key
 
-### Service account key
-
-Create this file locally on your machine:
-
+Create this file:
 ```text
 app/src/main/assets/service-account-key.json
 ```
 
-Put the downloaded service account JSON inside that file.
+Paste the service account JSON inside. **Do not commit this file.**
 
-Important:
+## Build & Run
 
-- do not commit this file
-- if you ever committed a real key before, rotate it in Google Cloud and generate a new one
+### Open The Project
 
-The app also supports a `SERVICE_ACCOUNT_JSON` build config string, but the assets file is much easier to manage during development. Keep it local and out of git.
+Open in Android Studio and let Gradle sync.
 
-## 6. Open The Project
-
-You can open the repo in Android Studio and let Gradle sync, or use the command line.
-
-If your SDK path is not detected automatically, make sure `local.properties` contains:
-
+If SDK path is not detected, add to `local.properties`:
 ```text
 sdk.dir=C:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
 ```
 
-To enable Google Sheets sync, the same file should also include:
-
-```text
-spreadsheet.id=YOUR_REAL_SPREADSHEET_ID
-```
-
-Typical useful environment variables on Windows:
-
-```text
-ANDROID_HOME=C:\Users\YOUR_NAME\AppData\Local\Android\Sdk
-ANDROID_SDK_ROOT=C:\Users\YOUR_NAME\AppData\Local\Android\Sdk
-```
-
-Also add these to `Path`:
-
-```text
-C:\Users\YOUR_NAME\AppData\Local\Android\Sdk\platform-tools
-C:\Users\YOUR_NAME\AppData\Local\Android\Sdk\emulator
-```
-
-## 7. Build The App
-
-Windows:
+### Build
 
 ```powershell
+# Windows
 .\gradlew.bat assembleDebug
-```
 
-macOS/Linux:
-
-```bash
+# macOS/Linux
 ./gradlew assembleDebug
 ```
 
-Install on a connected device or running emulator:
-
-Windows:
+### Install
 
 ```powershell
+# Windows
 .\gradlew.bat installDebug
-```
 
-macOS/Linux:
-
-```bash
+# macOS/Linux
 ./gradlew installDebug
 ```
 
-## 8. Run It On A Phone
+### Run On Physical Device
 
-1. Enable Developer Options on the phone.
-2. Enable USB debugging.
-3. Connect the phone.
-4. Confirm it appears in:
+1. Enable Developer Options on the phone
+2. Enable USB debugging
+3. Connect the phone
+4. Verify with `adb devices`
+5. Install: `.\gradlew.bat installDebug`
+6. Launch from phone or: `adb shell am start -n com.financetracker/.MainActivity`
 
-```powershell
-adb devices
-```
-
-5. Install the app:
+### Run On Emulator
 
 ```powershell
-.\gradlew.bat installDebug
-```
-
-6. Launch it from the phone or with:
-
-```powershell
-adb shell am start -n com.financetracker/.MainActivity
-```
-
-## 9. Run It On An Emulator
-
-List AVDs:
-
-```powershell
+# List available AVDs
 emulator -list-avds
-```
 
-Start one:
-
-```powershell
+# Start emulator
 emulator -avd Pixel_9_Pro
-```
 
-If the emulator window is black, start it with a cold boot and software rendering:
-
-```powershell
-emulator -avd Pixel_9_Pro -no-snapshot-load -gpu swiftshader_indirect
-```
-
-Install and launch:
-
-```powershell
+# Install and launch
 .\gradlew.bat installDebug
 adb shell am start -n com.financetracker/.MainActivity
 ```
 
-You can also use the included helper scripts:
+### Helper Scripts
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-emulator-debug.ps1
@@ -322,105 +271,51 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-pixel-debug.ps1
 
 ## How The App Behaves
 
-### When sync is configured correctly
+### Sync Configured
+- Categories and data load from Google Sheets
+- Monthly sheets created automatically
+- Live sync for all operations
+- Reports use live data
 
-- categories load from Google Sheets
-- monthly sheets are created automatically
-- expenses, income, and recurring entries sync with Sheets
-- reports use live data
-
-### When sync is missing or broken
-
-- the app still opens
-- cached data is used when available
-- the dashboard shows sync status
-- actions continue locally as cached changes in memory for the current session
-
-## Main Features
-
-- expense tracking
-- transfer tracking
-- split transactions
-- monthly income tracking
-- recurring income and recurring expenses
-- category budgets
-- dashboard summaries
-- reports and comparisons
-- theme mode selection
-- currency selection with persistence across app restarts
-- notification-based overspending alerts
-
-## Project Structure At A Glance
-
-```text
-app/src/main/java/com/financetracker/
-|-- MainActivity.kt
-|-- data/
-|   |-- model/
-|   `-- repository/
-|-- ui/
-|   |-- navigation/
-|   |-- screens/
-|   |-- theme/
-|   `-- viewmodel/
-`-- workmanager/
-```
-
-Key files:
-
-- `app/src/main/java/com/financetracker/MainActivity.kt`
-- `app/src/main/java/com/financetracker/data/repository/GoogleSheetsRepository.kt`
-- `app/src/main/java/com/financetracker/ui/viewmodel/ExpenseViewModel.kt`
-- `app/src/main/java/com/financetracker/ui/navigation/FinanceNavHost.kt`
-- `app/src/main/java/com/financetracker/ui/screens/`
+### Sync Not Configured
+- App opens normally
+- Cached data used when available
+- Dashboard shows sync status
+- Local changes continue for the session
 
 ## Troubleshooting
 
-### The app opens but sync does not work
+### Sync Not Working
+- Verify `spreadsheet.id` in `local.properties`
+- Verify `service-account-key.json` exists in `app/src/main/assets/`
+- Sheets API enabled in Google Cloud
+- Sheet shared with service account as Editor
+- Device has internet access
+- Rebuild app after changing `local.properties`
 
-Check all of these:
+### Cached/Old Data
+- Use dashboard refresh button
+- Check sync status card
 
-- `local.properties` contains `spreadsheet.id=YOUR_REAL_SPREADSHEET_ID`
-- `service-account-key.json` exists in `app/src/main/assets/`
-- Sheets API is enabled in Google Cloud
-- the spreadsheet is shared with the service account email as `Editor`
-- the phone or emulator has internet access
+### Emulator Black Screen
+- Cold boot: `emulator -avd Pixel_9_Pro -no-snapshot-load -gpu swiftshader_indirect`
 
-If you just changed `local.properties`, sync Gradle or rebuild the app so the new value is regenerated into `BuildConfig`.
-
-### The app installs but shows old or cached data
-
-- use the dashboard refresh action
-- check the sync status card on the home screen
-- confirm the app is pointing to the spreadsheet you expect
-
-### The emulator window is black
-
-- cold boot the emulator
-- run with `-gpu swiftshader_indirect`
-- wake the virtual device if the Android guest is booted but the screen is off
-
-### Build fails
-
-Check:
-
-- JDK 17 is installed
-- Android SDK is installed
-- `local.properties` points to the SDK
-- Gradle wrapper files exist
+### Build Fails
+- Verify JDK 17 installed
+- Verify Android SDK installed
+- Verify `local.properties` SDK path
+- Verify Gradle wrapper files exist
 
 ## Security Notes
 
-- never commit `service-account-key.json`
-- never share a real private key in screenshots, docs, or chat
-- if a real service account key was ever committed, revoke it and generate a new one
+- Never commit `service-account-key.json`
+- Never share private keys in screenshots or docs
+- If a key was ever committed, revoke and regenerate
 
-## Final Notes
+## License
 
-This project is set up so someone else can clone it, add their own local credentials, point it at their own spreadsheet, and run it on either a physical Android phone or a laptop emulator without needing any extra backend.
+This project is for personal use.
 
-If you are handing this project to another developer, the only local pieces they need to create are:
+---
 
-- `local.properties`
-- `app/src/main/assets/service-account-key.json`
-- their own spreadsheet ID in `local.properties`
+Built with ❤️ using Kotlin and Jetpack Compose

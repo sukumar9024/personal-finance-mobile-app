@@ -1,6 +1,9 @@
 package com.financetracker.ui.theme
 
 import android.app.Activity
+import android.os.Build
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -8,6 +11,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,10 +33,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -42,315 +50,237 @@ import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import com.financetracker.data.model.Category
 
-// Professional Color Palette - Finance-themed
-val PrimaryBlue = Color(0xFF1976D2)
-val PrimaryBlueDark = Color(0xFF0D47A1)
-val AccentGreen = Color(0xFF4CAF50)
-val AccentOrange = Color(0xFFFF9800)
-val AccentRed = Color(0xFFE53935)
-val AccentPurple = Color(0xFF7B1FA2)
+// ==================== FUTURISTIC COLOR PALETTE ====================
 
-// Light Theme Colors
-val LightBackground = Color(0xFFFFFEFE)
-val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF5F5F5)
-val LightOutline = Color(0xFFE0E0E0)
-val LightOnBackground = Color(0xFF212121)
-val LightOnSurface = Color(0xFF212121)
-val LightOnSurfaceVariant = Color(0xFF616161)
+// Primary accent - Electric Blue gradient
+val ElectricBlue = Color(0xFF00D4FF)
+val ElectricBlueDark = Color(0xFF0099CC)
+val NeonPurple = Color(0xFF8B5CF6)
+val NeonPink = Color(0xFFF472B6)
+val CyberGreen = Color(0xFF10B981)
+val CyberTeal = Color(0xFF14B8A6)
+val CyberOrange = Color(0xFFF59E0B)
+val CyberRed = Color(0xFFEF4444)
+val CyberYellow = Color(0xFFFBBF24)
 
-// Dark Theme Colors
-val DarkBackground = Color(0xFF121212)
-val DarkSurface = Color(0xFF1E1E1E)
-val DarkSurfaceVariant = Color(0xFF2D2D2D)
-val DarkOutline = Color(0xFF404040)
-val DarkOnBackground = Color(0xFFE1E1E1)
-val DarkOnSurface = Color(0xFFE1E1E1)
-val DarkOnSurfaceVariant = Color(0xFFB0B0B0)
+// Glass morphism surfaces
+val GlassSurfaceLight = Color(0x80FFFFFF)
+val GlassSurfaceDark = Color(0x801A1A2E)
+val GlassBorderLight = Color(0x4000D4FF)
+val GlassBorderDark = Color(0x408B5CF6)
 
-// Category Colors (vibrant but professional)
-val CategoryFood = Color(0xFFFF6B6B)
-val CategoryTransport = Color(0xFF4ECDC4)
-val CategoryShopping = Color(0xFF45B7D1)
-val CategoryBills = Color(0xFF96CEB4)
-val CategoryEntertainment = Color(0xFFFFEAA7)
-val CategoryHealth = Color(0xFFDDA0DD)
-val CategoryEducation = Color(0xFF98D8C8)
-val CategoryOther = Color(0xFFB0BEC5)
+// Deep space backgrounds
+val DeepSpaceLight = Color(0xFFF8FAFC)
+val DeepSpaceDark = Color(0xFF0A0A1A)
+val NebulaSurface = Color(0xFF12122A)
+val StardustSurface = Color(0xFF1E1E3F)
 
-private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryBlue,
-    onPrimary = Color.White,
-    primaryContainer = PrimaryBlueDark,
-    onPrimaryContainer = LightSurface,
-    secondary = AccentGreen,
-    onSecondary = Color.White,
-    tertiary = AccentOrange,
-    onTertiary = Color.White,
-    error = AccentRed,
-    background = DarkBackground,
-    onBackground = DarkOnBackground,
-    surface = DarkSurface,
-    onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = DarkOnSurfaceVariant,
-    outline = DarkOutline,
-    inverseSurface = DarkSurfaceVariant,
-    inverseOnSurface = DarkOnBackground
-)
-
+// Light Theme - Quantum Glass
 private val LightColorScheme = lightColorScheme(
-    primary = PrimaryBlue,
+    primary = ElectricBlue,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFE3F2FD),
-    onPrimaryContainer = PrimaryBlueDark,
-    secondary = AccentGreen,
+    primaryContainer = Color(0xFFE0F7FF),
+    onPrimaryContainer = Color(0xFF006699),
+    secondary = NeonPurple,
     onSecondary = Color.White,
-    tertiary = AccentOrange,
+    secondaryContainer = Color(0xFFF0EBFF),
+    onSecondaryContainer = Color(0xFF5B21B6),
+    tertiary = CyberGreen,
     onTertiary = Color.White,
-    error = AccentRed,
-    background = LightBackground,
-    onBackground = LightOnBackground,
-    surface = LightSurface,
-    onSurface = LightOnSurface,
-    surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = LightOnSurfaceVariant,
-    outline = LightOutline,
-    inverseSurface = LightSurfaceVariant,
-    inverseOnSurface = LightOnBackground
+    tertiaryContainer = Color(0xFFE0F9F0),
+    onTertiaryContainer = Color(0xFF047857),
+    error = CyberRed,
+    onError = Color.White,
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFFB91C1C),
+    background = DeepSpaceLight,
+    onBackground = Color(0xFF1E293B),
+    surface = Color.White,
+    onSurface = Color(0xFF0F172A),
+    surfaceVariant = Color(0xFFF1F5F9),
+    onSurfaceVariant = Color(0xFF64748B),
+    outline = Color(0xFFCBD5E1),
+    outlineVariant = Color(0xFFE2E8F0),
+    inverseSurface = Color(0xFF0F172A),
+    inverseOnSurface = Color(0xFFF1F5F9),
+    inversePrimary = NeonPurple,
+    surfaceDim = Color(0xFFF1F5F9),
+    surfaceBright = Color.White,
+    surfaceContainerLowest = Color(0xFFFAFBFC),
+    surfaceContainerLow = Color(0xFFEFF3F8),
+    surfaceContainer = Color(0xFFE8EDF3),
+    surfaceContainerHigh = Color(0xFFDFE6EE),
+    surfaceContainerHighest = Color(0xFFD6DEE8)
 )
 
-private val FinanceTypography = Typography(
+// Dark Theme - Neon Cyberpunk
+private val DarkColorScheme = darkColorScheme(
+    primary = ElectricBlue,
+    onPrimary = Color(0xFF0A0A1A),
+    primaryContainer = Color(0xFF003D5C),
+    onPrimaryContainer = Color(0xFF80EFFF),
+    secondary = NeonPurple,
+    onSecondary = Color(0xFF0A0A1A),
+    secondaryContainer = Color(0xFF3B1F7D),
+    onSecondaryContainer = Color(0xFFD8B4FE),
+    tertiary = CyberGreen,
+    onTertiary = Color(0xFF0A0A1A),
+    tertiaryContainer = Color(0xFF065F46),
+    onTertiaryContainer = Color(0xFF6EE7B7),
+    error = CyberRed,
+    onError = Color(0xFF0A0A1A),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color(0xFFFCA5A5),
+    background = DeepSpaceDark,
+    onBackground = Color(0xFFE2E8F0),
+    surface = NebulaSurface,
+    onSurface = Color(0xFFF8FAFC),
+    surfaceVariant = StardustSurface,
+    onSurfaceVariant = Color(0xFF94A3B8),
+    outline = Color(0xFF475569),
+    outlineVariant = Color(0xFF334155),
+    inverseSurface = Color(0xFFF1F5F9),
+    inverseOnSurface = Color(0xFF0F172A),
+    inversePrimary = ElectricBlue,
+    surfaceDim = Color(0xFF0A0A15),
+    surfaceBright = Color(0xFF1A1A2E),
+    surfaceContainerLowest = Color(0xFF050510),
+    surfaceContainerLow = Color(0xFF0D0D1F),
+    surfaceContainer = Color(0xFF12122A),
+    surfaceContainerHigh = Color(0xFF1A1A35),
+    surfaceContainerHighest = Color(0xFF222240)
+)
+
+// ==================== MODERN TYPOGRAPHY ====================
+
+private val ModernTypography = Typography(
     displayLarge = TextStyle(
-        fontSize = 40.sp,
-        lineHeight = 48.sp,
-        fontWeight = FontWeight.Bold
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 42.sp,
+        lineHeight = 52.sp,
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = (-0.5).sp
     ),
     displayMedium = TextStyle(
-        fontSize = 34.sp,
-        lineHeight = 42.sp,
-        fontWeight = FontWeight.Bold
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 36.sp,
+        lineHeight = 44.sp,
+        fontWeight = FontWeight.ExtraBold,
+        letterSpacing = (-0.25).sp
     ),
     displaySmall = TextStyle(
-        fontSize = 28.sp,
-        lineHeight = 36.sp,
-        fontWeight = FontWeight.SemiBold
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 30.sp,
+        lineHeight = 38.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.sp
     ),
     headlineLarge = TextStyle(
-        fontSize = 26.sp,
-        lineHeight = 32.sp,
-        fontWeight = FontWeight.SemiBold
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 0.sp
     ),
     headlineMedium = TextStyle(
-        fontSize = 22.sp,
-        lineHeight = 28.sp,
-        fontWeight = FontWeight.SemiBold
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.sp
     ),
     headlineSmall = TextStyle(
-        fontSize = 18.sp,
-        lineHeight = 24.sp,
-        fontWeight = FontWeight.SemiBold
+        fontFamily = FontFamily.SansSerif,
+        fontSize = 20.sp,
+        lineHeight = 28.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.sp
     ),
     titleLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 18.sp,
-        lineHeight = 24.sp,
-        fontWeight = FontWeight.Medium
+        lineHeight = 26.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.sp
     ),
     titleMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 16.sp,
-        lineHeight = 22.sp,
-        fontWeight = FontWeight.Medium
+        lineHeight = 24.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.15.sp
     ),
     titleSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.1.sp
     ),
     bodyLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 16.sp,
         lineHeight = 24.sp,
         fontWeight = FontWeight.Normal,
         letterSpacing = 0.5.sp
     ),
     bodyMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        fontWeight = FontWeight.Normal
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.25.sp
     ),
     bodySmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        fontWeight = FontWeight.Normal
+        fontWeight = FontWeight.Normal,
+        letterSpacing = 0.2.sp
     ),
     labelLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.1.sp
     ),
     labelMedium = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.1.sp
     ),
     labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
         fontSize = 11.sp,
         lineHeight = 14.sp,
-        fontWeight = FontWeight.Medium
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 0.1.sp
     )
 )
 
-// Shape definitions
-val CardShape = RoundedCornerShape(16.dp)
-val ButtonShape = RoundedCornerShape(12.dp)
-val InputShape = RoundedCornerShape(14.dp)
+// ==================== ADVANCED SHAPES ====================
+
+val GlassShape = RoundedCornerShape(20.dp)
+val ModernCardShape = RoundedCornerShape(24.dp)
+val ModernButtonShape = RoundedCornerShape(16.dp)
+val ModernInputShape = RoundedCornerShape(16.dp)
+val PillShape = RoundedCornerShape(50)
+val OctagonShape = RoundedCornerShape(28.dp)
+
+// Backward compatibility aliases
+@Deprecated("Use ModernCardShape or GlassShape instead", ReplaceWith("ModernCardShape"))
+val CardShape = ModernCardShape
 
 // Spacing constants
-val FinanceScreenPadding = 20.dp
-val CardPadding = 20.dp
-val ElementSpacing = 12.dp
+val ModernScreenPadding = 16.dp
+val ModernCardPadding = 20.dp
+val ModernElementSpacing = 12.dp
 
-// Format currency with proper formatting
-fun financeFormatCurrency(amount: Double): String {
-    return "\u20B9${"%,.2f".format(amount)}"
-}
-
-fun financeFormatCurrencyRounded(amount: Double): String {
-    return "\u20B9${"%,.0f".format(amount)}"
-}
-
-// Get category color from theme or fallback
-fun financeCategoryColor(category: Category?): Color {
-    if (category == null) return PrimaryBlue
-    
-    return when (category.name.lowercase()) {
-        "food" -> CategoryFood
-        "transport" -> CategoryTransport
-        "shopping" -> CategoryShopping
-        "bills" -> CategoryBills
-        "entertainment" -> CategoryEntertainment
-        "health" -> CategoryHealth
-        "education" -> CategoryEducation
-        else -> CategoryOther
-    }
-}
-
-// Enhanced Gradient Colors for Premium Feel
-val GradientStart = Color(0xFF667eea)
-val GradientEnd = Color(0xFF764ba2)
-val GradientGreenStart = Color(0xFF11998e)
-val GradientGreenEnd = Color(0xFF38ef7d)
-val GradientOrangeStart = Color(0xFFf093fb)
-val GradientOrangeEnd = Color(0xFFf5576c)
-
-// Shimmer animation for loading states
-@Composable
-fun shimmerBrush(): Brush {
-    val transition = rememberInfiniteTransition(label = "shimmer")
-    val translateAnim = transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1000f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "shimmer_translate"
-    )
-
-    val shimmerColors = listOf(
-        Color.LightGray.copy(alpha = 0.6f),
-        Color.LightGray.copy(alpha = 0.2f),
-        Color.LightGray.copy(alpha = 0.6f),
-    )
-
-    return Brush.linearGradient(
-        colors = shimmerColors,
-        start = Offset.Zero,
-        end = Offset(x = translateAnim.value, y = translateAnim.value)
-    )
-}
-
-// Reusable UI Components
-@Composable
-fun FinanceHeroCard(
-    modifier: Modifier = Modifier,
-    useGradient: Boolean = false,
-    content: @Composable () -> Unit
-) {
-    Card(
-        modifier = modifier,
-        shape = CardShape,
-        colors = CardDefaults.cardColors(
-            containerColor = if (useGradient) {
-                Color.Transparent
-            } else {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-            }
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .then(
-                    if (useGradient) {
-                        Modifier.background(
-                            Brush.linearGradient(
-                                colors = listOf(GradientStart, GradientEnd),
-                                start = Offset.Zero,
-                                end = Offset.Infinite
-                            ),
-                            shape = CardShape
-                        )
-                    } else {
-                        Modifier
-                    }
-                )
-                .padding(CardPadding)
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-fun FinanceInlineBadge(
-    text: String,
-    modifier: Modifier = Modifier,
-    isAnimated: Boolean = false
-) {
-    val transition = if (isAnimated) {
-        rememberInfiniteTransition(label = "badge")
-    } else null
-
-    val alpha = if (isAnimated && transition != null) {
-        transition.animateFloat(
-            initialValue = 0.18f,
-            targetValue = 0.35f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(1000),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "badge_alpha"
-        ).value
-    } else {
-        0.18f
-    }
-
-    Surface(
-        modifier = modifier,
-        shape = ButtonShape,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
-        contentColor = MaterialTheme.colorScheme.primary
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-        )
-    }
-}
-
+// Backward compatibility alias
+@Deprecated("Use SectionHeader from AppStyle or this function instead")
 @Composable
 fun FinanceSectionHeader(
     title: String,
@@ -389,99 +319,251 @@ fun FinanceSectionHeader(
     }
 }
 
-@Composable
-fun FinanceStatPill(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    accentColor: Color? = null
-) {
-    val backgroundColor = accentColor?.copy(alpha = 0.12f) 
-        ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+// ==================== GRADIENT DEFINITIONS ====================
 
+val PrimaryGradient = listOf(ElectricBlue, NeonPurple)
+val SuccessGradient = listOf(CyberGreen, CyberTeal)
+val WarningGradient = listOf(CyberOrange, CyberYellow)
+val DangerGradient = listOf(CyberRed, NeonPink)
+val BrandGradient = listOf(ElectricBlue, NeonPurple, NeonPink)
+
+// Category colors - Futuristic neon palette (used if not specified in AppStyle)
+val NeonCategoryColors = listOf(
+    Color(0xFFFF6B6B), // Neon Red
+    Color(0xFF4ECDC4), // Cyan
+    Color(0xFF45B7D1), // Sky Blue
+    Color(0xFF96CEB4), // Mint
+    Color(0xFFFFEAA7), // Soft Yellow
+    Color(0xFFDDA0DD), // Lilac
+    Color(0xFF98D8C8), // Seafoam
+    Color(0xFFF7DC6F), // Gold
+    Color(0xFFBB8FCE), // Violet
+    Color(0xFF85C1E9), // Baby Blue
+    Color(0xFFF8C471), // Peach
+    Color(0xFF82E0AA), // Light Green
+    Color(0xFFD2B4DE), // Lavender
+    Color(0xFFAED6F1), // Powder Blue
+    Color(0xFFF9E79F), // Pale Yellow
+    Color(0xFFA3E4D7)  // Aqua
+)
+
+// ==================== ANIMATIONS ====================
+
+@Composable
+fun shimmerBrush(targetValue: Float = 1000f): Brush {
+    val transition = rememberInfiniteTransition(label = "shimmer")
+    val translateAnim = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = targetValue,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmer_translate"
+    )
+
+    val shimmerColors = listOf(
+        Color.LightGray.copy(alpha = 0.2f),
+        Color.LightGray.copy(alpha = 0.5f),
+        Color.LightGray.copy(alpha = 0.2f),
+    )
+
+    return Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset.Zero,
+        end = Offset(x = translateAnim.value, y = translateAnim.value)
+    )
+}
+
+@Composable
+fun gradientBrush(colors: List<Color>): Brush {
+    val transition = rememberInfiniteTransition(label = "gradient")
+    val angle = transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 5000, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "gradient_rotation"
+    )
+
+    return Brush.linearGradient(
+        colors = colors,
+        start = Offset(0f, 0f),
+        end = Offset(cos(angle.value * Math.PI / 180f).toFloat() * 1000f, sin(angle.value * Math.PI / 180f).toFloat() * 1000f)
+    )
+}
+
+// Math helpers for gradient animation
+private fun cos(radians: Double): Float {
+    return kotlin.math.cos(radians).toFloat()
+}
+
+private fun sin(radians: Double): Float {
+    return kotlin.math.sin(radians).toFloat()
+}
+
+// ==================== REUSABLE UI COMPONENTS ====================
+
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    shape: Shape = GlassShape,
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit
+) {
+    val containerColor = if (darkTheme) GlassSurfaceDark else GlassSurfaceLight
+    val borderColor = if (darkTheme) GlassBorderDark else GlassBorderLight
+    
     Card(
         modifier = modifier,
-        shape = CardShape,
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+        shape = shape,
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        onClick = { onClick?.invoke() }
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+        Box(
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            containerColor.copy(alpha = 0.7f),
+                            containerColor.copy(alpha = 0.3f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(colors = listOf(borderColor, borderColor.copy(alpha = 0.1f))),
+                    shape = shape
+                )
+                .padding(ModernCardPadding)
         ) {
-            Text(
-                text = label.uppercase(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 10.sp
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = accentColor ?: MaterialTheme.colorScheme.onSurface
-            )
+            content()
         }
     }
 }
 
 @Composable
-fun FinanceProgressBar(
-    progress: Float,
+fun NeonButton(
+    text: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    color: Color = MaterialTheme.colorScheme.primary,
-    trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    height: Int = 10
+    gradientColors: List<Color> = PrimaryGradient,
+    enabled: Boolean = true,
+    icon: @Composable (() -> Unit)? = null
 ) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(height.dp))
-            .background(trackColor)
-            .fillMaxWidth()
+    Surface(
+        modifier = modifier,
+        shape = ModernButtonShape,
+        onClick = onClick,
+        enabled = enabled
     ) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(height.dp))
                 .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(color, color.copy(alpha = 0.7f))
-                    )
+                    Brush.horizontalGradient(colors = gradientColors)
                 )
-                .fillMaxWidth(progress.coerceIn(0f, 1f))
-                .padding(vertical = (height / 2).dp)
-        )
+                .padding(horizontal = 24.dp, vertical = 14.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                icon?.invoke()
+                if (icon != null) {
+                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+                }
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
+        }
     }
 }
 
 @Composable
-fun FinanceAnimatedIcon(
-    icon: @Composable () -> Unit,
-    modifier: Modifier = Modifier
+fun StatCard(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    gradientColors: List<Color> = PrimaryGradient,
+    icon: @Composable (() -> Unit)? = null
 ) {
-    Box(
+    Card(
         modifier = modifier,
-        contentAlignment = Alignment.Center
+        shape = OctagonShape,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        icon()
+        Box(
+            modifier = Modifier
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surface,
+                            MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+                )
+                .padding(16.dp)
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                horizontalAlignment = if (icon == null) Alignment.CenterHorizontally else Alignment.Start
+            ) {
+                if (icon != null) {
+                    icon()
+                }
+                Text(
+                    text = label.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+            }
+        }
     }
 }
+
+// ==================== THEME COMPOSABLE ====================
 
 @Composable
 fun FinanceTrackerTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) {
-        DarkColorScheme
-    } else {
-        LightColorScheme
+    val colorScheme = when {
+        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        }
+        darkTheme -> DarkColorScheme
+        else -> LightColorScheme
     }
-
+    
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
+            
+            // Edge-to-edge display
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            
+            // Status bar and navigation bar
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
             WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
         }
@@ -489,7 +571,32 @@ fun FinanceTrackerTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = FinanceTypography,
+        typography = ModernTypography,
         content = content
+    )
+}
+
+// Dynamic color support for Android 12+
+@Composable
+private fun dynamicLightColorScheme(context: android.content.Context): androidx.compose.material3.ColorScheme {
+    return lightColorScheme(
+        primary = ElectricBlue,
+        secondary = NeonPurple,
+        tertiary = CyberGreen,
+        background = DeepSpaceLight,
+        surface = Color.White,
+        onPrimary = Color.White
+    )
+}
+
+@Composable
+private fun dynamicDarkColorScheme(context: android.content.Context): androidx.compose.material3.ColorScheme {
+    return darkColorScheme(
+        primary = ElectricBlue,
+        secondary = NeonPurple,
+        tertiary = CyberGreen,
+        background = DeepSpaceDark,
+        surface = NebulaSurface,
+        onPrimary = Color(0xFF0A0A1A)
     )
 }

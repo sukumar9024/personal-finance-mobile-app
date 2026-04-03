@@ -45,34 +45,35 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
                 ThemeMode.DARK -> true
             }
-            val notificationPermissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { granted ->
-                if (granted) {
-                    uiState.overspendingAlert?.let { alert ->
-                        postOverspendingNotification(alert.title, alert.message)
-                    }
-                }
-                viewModel.consumeOverspendingAlert()
-            }
-
-            LaunchedEffect(uiState.overspendingAlert?.token) {
-                val alert = uiState.overspendingAlert ?: return@LaunchedEffect
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                ) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                } else {
-                    postOverspendingNotification(alert.title, alert.message)
-                    viewModel.consumeOverspendingAlert()
-                }
-            }
 
             FinanceTrackerTheme(darkTheme = darkTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        if (granted) {
+                            uiState.overspendingAlert?.let { alert ->
+                                postOverspendingNotification(alert.title, alert.message)
+                            }
+                        }
+                        viewModel.consumeOverspendingAlert()
+                    }
+
+                    LaunchedEffect(uiState.overspendingAlert?.token) {
+                        val alert = uiState.overspendingAlert ?: return@LaunchedEffect
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            postOverspendingNotification(alert.title, alert.message)
+                            viewModel.consumeOverspendingAlert()
+                        }
+                    }
+
                     FinanceNavHost(viewModel = viewModel)
                 }
             }

@@ -1,7 +1,5 @@
 package com.financetracker.data.model
 
-import java.util.Locale
-
 enum class Currency(
     val code: String,
     val symbol: String,
@@ -24,20 +22,7 @@ enum class Currency(
         }
 
         fun getDefault(): Currency {
-            val locale = Locale.getDefault()
-            return when (locale.country) {
-                "IN" -> INR
-                "US" -> USD
-                "GB" -> GBP
-                "EU", "DE", "FR", "IT", "ES" -> EUR
-                "JP" -> JPY
-                "CN" -> CNY
-                "AU" -> AUD
-                "CA" -> CAD
-                "SG" -> SGD
-                "AE" -> AED
-                else -> USD
-            }
+            return INR
         }
     }
 }

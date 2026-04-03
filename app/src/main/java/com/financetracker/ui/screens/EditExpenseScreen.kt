@@ -18,7 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -57,8 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.financetracker.data.model.Expense
-import com.financetracker.ui.theme.CardShape
-import com.financetracker.ui.theme.FinanceSectionHeader
+import com.financetracker.ui.theme.SectionHeader
 import com.financetracker.ui.theme.Shapes
 import com.financetracker.ui.theme.Spacing
 import com.financetracker.ui.theme.categoryColor
@@ -68,6 +67,7 @@ import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("DEPRECATION")
 @Composable
 fun EditExpenseScreen(
     viewModel: ExpenseViewModel,
@@ -86,7 +86,7 @@ fun EditExpenseScreen(
                     title = { Text("Edit Expense") },
                     navigationIcon = {
                         IconButton(onClick = onNavigateBack) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
                     }
                 )
@@ -171,7 +171,7 @@ fun EditExpenseScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
@@ -473,12 +473,12 @@ private fun EditSectionCard(
     content: @Composable () -> Unit
 ) {
     Card(
-        shape = CardShape,
+        shape = Shapes.large,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            FinanceSectionHeader(title = title, subtitle = subtitle, showDivider = true)
+            SectionHeader(title = title, subtitle = subtitle)
             Spacer(modifier = Modifier.height(20.dp))
             content()
         }

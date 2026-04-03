@@ -19,7 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -101,13 +101,13 @@ private fun localeForCurrency(currency: AppCurrency): Locale {
         AppCurrency.USD -> Locale.US
         AppCurrency.EUR -> Locale.GERMANY
         AppCurrency.GBP -> Locale.UK
-        AppCurrency.INR -> Locale("en", "IN")
+        AppCurrency.INR -> Locale.Builder().setLanguage("en").setRegion("IN").build()
         AppCurrency.JPY -> Locale.JAPAN
         AppCurrency.CNY -> Locale.CHINA
-        AppCurrency.AUD -> Locale("en", "AU")
+        AppCurrency.AUD -> Locale.Builder().setLanguage("en").setRegion("AU").build()
         AppCurrency.CAD -> Locale.CANADA
-        AppCurrency.SGD -> Locale("en", "SG")
-        AppCurrency.AED -> Locale("en", "AE")
+        AppCurrency.SGD -> Locale.Builder().setLanguage("en").setRegion("SG").build()
+        AppCurrency.AED -> Locale.Builder().setLanguage("en").setRegion("AE").build()
     }
 }
 
@@ -492,7 +492,7 @@ fun ErrorBanner(
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconCircle(
-                icon = Icons.Default.TrendingUp,
+                icon = Icons.AutoMirrored.Filled.TrendingUp,
                 tint = MaterialTheme.colorScheme.error,
                 size = 36.dp,
                 iconSize = 18.dp

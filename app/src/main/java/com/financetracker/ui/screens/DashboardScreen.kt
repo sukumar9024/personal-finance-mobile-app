@@ -22,13 +22,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Button
@@ -252,7 +252,7 @@ fun DashboardScreen(
                 start = ScreenPadding,
                 end = ScreenPadding,
                 top = paddingValues.calculateTopPadding() + Spacing.sm,
-                bottom = paddingValues.calculateBottomPadding() + 100.dp
+                bottom = paddingValues.calculateBottomPadding() + Spacing.xxxl
             ),
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
@@ -285,7 +285,8 @@ fun DashboardScreen(
                     syncStatus = uiState.syncStatus,
                     lastSyncedText = lastSyncedText,
                     lastAttemptText = lastAttemptText,
-                    refreshLabel = refreshLabel
+                    refreshLabel = refreshLabel,
+                    currency = currency
                 )
             }
 
@@ -438,7 +439,7 @@ fun DashboardScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             IconCircle(
-                                icon = Icons.Default.ReceiptLong,
+                                icon = Icons.AutoMirrored.Filled.ReceiptLong,
                                 tint = MaterialTheme.colorScheme.primary,
                                 size = 64.dp,
                                 iconSize = 32.dp
@@ -699,7 +700,8 @@ private fun DashboardControlCard(
     syncStatus: com.financetracker.ui.viewmodel.SyncStatus,
     lastSyncedText: String,
     lastAttemptText: String,
-    refreshLabel: String
+    refreshLabel: String,
+    currency: Currency = Currency.getDefault()
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -790,7 +792,7 @@ private fun DashboardControlCard(
                 onValueChange = onBudgetInputChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Monthly budget") },
-                prefix = { Text("Rs") },
+                prefix = { Text(currency.symbol) },
                 singleLine = true,
                 shape = Shapes.medium
             )
@@ -928,7 +930,7 @@ private fun QuickAddCard(
                 onValueChange = onAmountChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Amount") },
-                prefix = { Text("Rs") },
+                prefix = { Text(currency.symbol) },
                 singleLine = true,
                 shape = Shapes.medium
             )
@@ -1082,7 +1084,7 @@ private fun SortDropdown(
 ) {
     var expanded by remember { mutableStateOf(false) }
     OutlinedButton(onClick = { expanded = true }, shape = Shapes.medium) {
-        Icon(Icons.Default.Sort, contentDescription = null, modifier = Modifier.size(16.dp))
+        Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(16.dp))
         Spacer(modifier = Modifier.width(Spacing.sm))
         Text("Sort: ${selected.label}")
     }
@@ -1241,7 +1243,7 @@ private fun ExpenseItem(
             ) {
                 IconCircle(
                     icon = when {
-                        isTransfer -> Icons.Default.ArrowForward
+                        isTransfer -> Icons.AutoMirrored.Filled.ArrowForward
                         isSplit -> Icons.Default.Category
                         else -> Icons.Default.ShoppingCart
                     },
@@ -1355,7 +1357,7 @@ private fun ExpenseItem(
                         }
                     }
                     Icon(
-                        imageVector = Icons.Default.ArrowForward,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)

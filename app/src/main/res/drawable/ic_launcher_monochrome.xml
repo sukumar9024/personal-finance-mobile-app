@@ -4,13 +4,18 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- SC Letters - S -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,42 L34,42 Q30,42 30,46 L30,52 Q30,56 34,56 L42,56 Q46,56 46,60 L46,64 Q46,68 42,68 L34,68 Q30,68 30,64 L30,62 L34,62 L34,68 L42,68 Q50,68 50,64 L50,60 Q50,54 42,54 L34,54 Q30,54 30,50 L30,46 Q30,38 38,38 L44,38 Z" />
+    
+    <!-- SC Letters - C -->
     <path
-        android:fillColor="#FF000000"
-        android:pathData="M54,54m-15,0a15,15 0,1 1,30 0a15,15 0,1 1,-30 0" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M76,42 L66,42 Q60,42 60,48 L60,66 Q60,72 66,72 L76,72 L76,68 L68,68 Q64,68 64,64 L64,48 Q64,44 68,44 L76,44 Z" />
+    
+    <!-- Accent dot -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M54,54m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,38 A2,2 0 1,1 82,38 A2,2 0 1,1 78,38 Z" />
 </vector>
