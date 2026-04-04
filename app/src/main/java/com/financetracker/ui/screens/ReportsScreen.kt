@@ -200,7 +200,8 @@ fun ReportsScreen(
             BudgetVsActualCard(
                 categories = categories,
                 expenses = uiState.expenses,
-                monthlyIncome = uiState.monthlyIncome
+                monthlyIncome = uiState.monthlyIncome,
+                categoryBudgets = uiState.categoryBudgets
             )
 
             MonthComparisonCard(
