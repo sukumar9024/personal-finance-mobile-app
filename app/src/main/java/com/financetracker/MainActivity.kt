@@ -12,24 +12,36 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.fragment.app.FragmentActivity
 import com.financetracker.ui.navigation.FinanceNavHost
 import com.financetracker.ui.theme.FinanceTrackerTheme
 import com.financetracker.ui.theme.ThemeMode
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val viewModel: ExpenseViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +63,9 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
+                    var biometricUnlocked by rememberSaveable(uiState.biometricLockEnabled) {
+                        mutableStateOf(!uiState.biometricLockEnabled)
+                    }
                     val notificationPermissionLauncher = rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission()
                     ) { granted ->
@@ -74,10 +89,71 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    FinanceNavHost(viewModel = viewModel)
+                    LaunchedEffect(uiState.biometricLockEnabled) {
+                        if (uiState.biometricLockEnabled && !biometricUnlocked) {
+                            showBiometricPrompt(
+                                onAuthenticated = { biometricUnlocked = true },
+                                onUnavailable = {
+                                    viewModel.setBiometricLockEnabled(false)
+                                    biometricUnlocked = true
+                                }
+                            )
+                        }
+                    }
+
+                    if (biometricUnlocked) {
+                        FinanceNavHost(viewModel = viewModel)
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                                Text("Finance Tracker is locked", style = MaterialTheme.typography.titleLarge)
+                                Text("Authenticate with your device credential to continue.", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private fun showBiometricPrompt(
+        onAuthenticated: () -> Unit,
+        onUnavailable: () -> Unit
+    ) {
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
+            BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val biometricManager = BiometricManager.from(this)
+        if (biometricManager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
+            onUnavailable()
+            return
+        }
+
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Unlock Finance Tracker")
+            .setSubtitle("Use biometrics or device credential")
+            .setAllowedAuthenticators(authenticators)
+            .build()
+
+        BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    onAuthenticated()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    if (errorCode == BiometricPrompt.ERROR_NO_BIOMETRICS ||
+                        errorCode == BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL ||
+                        errorCode == BiometricPrompt.ERROR_HW_UNAVAILABLE
+                    ) {
+                        onUnavailable()
+                    }
+                }
+            }
+        ).authenticate(promptInfo)
     }
 
     private fun ensureNotificationChannel() {

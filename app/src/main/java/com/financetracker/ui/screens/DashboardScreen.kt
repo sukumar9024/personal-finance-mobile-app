@@ -83,6 +83,7 @@ import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
+import com.financetracker.data.model.SavingsGoal
 import com.financetracker.data.model.TransactionType
 import com.financetracker.data.model.isTransfer
 import com.financetracker.data.model.spendingTotal
@@ -105,6 +106,7 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.UUID
 
 private enum class TransactionSortOption(val label: String) {
     NEWEST("Newest"),
@@ -153,6 +155,8 @@ fun DashboardScreen(
     var endDateInput by remember { mutableStateOf("") }
     var showMonthPicker by remember { mutableStateOf(false) }
     var showNetWorthDialog by remember { mutableStateOf(false) }
+    var showGoalDialog by remember { mutableStateOf(false) }
+    var showExchangeDialog by remember { mutableStateOf(false) }
     var clearAction by remember { mutableStateOf<ClearAction?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -213,6 +217,12 @@ fun DashboardScreen(
             )
         }
         .sortedByDescending { it.spending }
+    val convertedMonthSpending = convertedSpending(
+        expenses = visibleMonthExpenses,
+        preferredCurrency = currency,
+        rates = uiState.exchangeRates,
+        enabled = uiState.exchangeConversionEnabled
+    )
     val remainingAmount = uiState.monthlyIncome - selectedMonthSpending
     val savingsSummaries = buildMonthlySavingsSummaries(
         expenses = historyExpenses.filter { Currency.fromCode(it.currencyCode) == currency },
@@ -381,9 +391,27 @@ fun DashboardScreen(
             }
 
             item {
+                CalendarSpendingCard(
+                    selectedMonth = selectedMonth,
+                    expenses = visibleMonthExpenses,
+                    preferredCurrency = currency
+                )
+            }
+
+            item {
                 MultiCurrencyExpenditureCard(
                     selectedMonth = selectedMonth,
                     summaries = currencyExpenseSummaries
+                )
+            }
+
+            item {
+                ExchangeConversionCard(
+                    preferredCurrency = currency,
+                    convertedSpending = convertedMonthSpending,
+                    enabled = uiState.exchangeConversionEnabled,
+                    onToggle = viewModel::setExchangeConversionEnabled,
+                    onConfigure = { showExchangeDialog = true }
                 )
             }
 
@@ -404,6 +432,13 @@ fun DashboardScreen(
                     balances = uiState.accountBalances,
                     currency = currency,
                     onEditClick = { showNetWorthDialog = true }
+                )
+            }
+
+            item {
+                SavingsGoalsCard(
+                    goals = uiState.savingsGoals,
+                    onEditClick = { showGoalDialog = true }
                 )
             }
 
@@ -710,6 +745,25 @@ fun DashboardScreen(
             onDismiss = { showNetWorthDialog = false }
         )
     }
+
+    if (showGoalDialog) {
+        SavingsGoalDialog(
+            goals = uiState.savingsGoals,
+            defaultCurrency = currency,
+            onSave = viewModel::addOrUpdateSavingsGoal,
+            onDelete = viewModel::deleteSavingsGoal,
+            onDismiss = { showGoalDialog = false }
+        )
+    }
+
+    if (showExchangeDialog) {
+        ExchangeRateDialog(
+            preferredCurrency = currency,
+            rates = uiState.exchangeRates,
+            onSaveRate = viewModel::setExchangeRate,
+            onDismiss = { showExchangeDialog = false }
+        )
+    }
 }
 
 private sealed interface ClearAction {
@@ -965,6 +1019,146 @@ private fun SavingsDashboardCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarSpendingCard(
+    selectedMonth: YearMonth,
+    expenses: List<Expense>,
+    preferredCurrency: Currency
+) {
+    val expensesByDay = expenses.groupBy { it.date.dayOfMonth }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(
+                title = "Spending Calendar",
+                subtitle = selectedMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
+            )
+            (1..selectedMonth.lengthOfMonth()).chunked(7).forEach { week ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                    week.forEach { day ->
+                        val dayExpenses = expensesByDay[day].orEmpty()
+                        val preferredTotal = dayExpenses
+                            .filter { Currency.fromCode(it.currencyCode) == preferredCurrency }
+                            .sumOf { it.amount }
+                        Surface(
+                            modifier = Modifier.weight(1f).height(58.dp),
+                            shape = Shapes.medium,
+                            color = if (dayExpenses.isNotEmpty()) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(Spacing.xs),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(day.toString(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                if (dayExpenses.isNotEmpty()) {
+                                    Text(
+                                        text = if (preferredTotal > 0.0) formatCurrencyRounded(preferredTotal, preferredCurrency) else "${dayExpenses.size} tx",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    repeat(7 - week.size) {
+                        Spacer(modifier = Modifier.weight(1f).height(58.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExchangeConversionCard(
+    preferredCurrency: Currency,
+    convertedSpending: Double?,
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onConfigure: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Exchange Conversion", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text("Optional converted total in ${preferredCurrency.code}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+            Text(
+                text = convertedSpending?.let { formatCurrency(it, preferredCurrency) } ?: "Add exchange rates to convert non-${preferredCurrency.code} spending.",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+            OutlinedButton(onClick = onConfigure, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium) {
+                Text("Configure Exchange Rates")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SavingsGoalsCard(
+    goals: List<SavingsGoal>,
+    onEditClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(
+                title = "Savings Goals",
+                subtitle = "Track emergency fund, loan payoff, trip, or investment targets",
+                action = {
+                    Text(
+                        text = "Edit",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clickable(onClick = onEditClick).padding(Spacing.sm)
+                    )
+                }
+            )
+            if (goals.isEmpty()) {
+                Text("No goals yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                goals.forEach { goal ->
+                    val goalCurrency = Currency.fromCode(goal.currencyCode)
+                    val progress = if (goal.targetAmount > 0.0) (goal.currentAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f) else 0f
+                    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(goal.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text("${formatCurrencyRounded(goal.currentAmount, goalCurrency)} / ${formatCurrencyRounded(goal.targetAmount, goalCurrency)}", style = MaterialTheme.typography.labelMedium)
+                        }
+                        Box(
+                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(Shapes.full).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                        ) {
+                            Box(
+                                modifier = Modifier.fillMaxWidth(progress).height(8.dp).clip(Shapes.full).background(MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -1611,6 +1805,112 @@ private fun NetWorthDialog(
             TextButton(onClick = onDismiss) {
                 Text("Done")
             }
+        }
+    )
+}
+
+@Composable
+private fun SavingsGoalDialog(
+    goals: List<SavingsGoal>,
+    defaultCurrency: Currency,
+    onSave: (SavingsGoal) -> Unit,
+    onDelete: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
+    var current by remember { mutableStateOf("") }
+    var selectedCurrency by remember { mutableStateOf(defaultCurrency) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Savings Goals") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Goal name") }, singleLine = true, shape = Shapes.medium)
+                OutlinedTextField(value = target, onValueChange = { target = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Target amount") }, prefix = { Text(selectedCurrency.symbol) }, singleLine = true, shape = Shapes.medium)
+                OutlinedTextField(value = current, onValueChange = { current = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Current saved") }, prefix = { Text(selectedCurrency.symbol) }, singleLine = true, shape = Shapes.medium)
+                FilterDropdown(
+                    label = "Currency",
+                    selectedValue = "${selectedCurrency.code} (${selectedCurrency.symbol})",
+                    options = Currency.entries.map { "${it.code} (${it.symbol})" },
+                    onOptionSelected = { selected ->
+                        Currency.entries.firstOrNull { selected.startsWith(it.code) }?.let { selectedCurrency = it }
+                    }
+                )
+                Button(
+                    onClick = {
+                        onSave(
+                            SavingsGoal(
+                                id = UUID.randomUUID().toString(),
+                                name = name,
+                                targetAmount = target.toDoubleOrNull() ?: 0.0,
+                                currentAmount = current.toDoubleOrNull() ?: 0.0,
+                                currencyCode = selectedCurrency.code
+                            )
+                        )
+                        name = ""
+                        target = ""
+                        current = ""
+                    },
+                    enabled = name.isNotBlank() && target.toDoubleOrNull() != null,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = Shapes.medium
+                ) {
+                    Text("Save Goal")
+                }
+                goals.forEach { goal ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(goal.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text("${formatCurrencyRounded(goal.currentAmount, Currency.fromCode(goal.currencyCode))} / ${formatCurrencyRounded(goal.targetAmount, Currency.fromCode(goal.currencyCode))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = { onDelete(goal.id) }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete goal")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
+        }
+    )
+}
+
+@Composable
+private fun ExchangeRateDialog(
+    preferredCurrency: Currency,
+    rates: Map<String, Double>,
+    onSaveRate: (Currency, Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Exchange Rates") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text("Enter how much 1 unit of each currency is worth in ${preferredCurrency.code}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Currency.entries.filterNot { it == preferredCurrency }.forEach { currency ->
+                    var rate by remember(currency.code, rates[currency.code]) { mutableStateOf(rates[currency.code]?.toEditableAmount().orEmpty()) }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = rate,
+                            onValueChange = { rate = it.filter { char -> char.isDigit() || char == '.' } },
+                            label = { Text("1 ${currency.code} in ${preferredCurrency.code}") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            shape = Shapes.medium
+                        )
+                        Button(onClick = { rate.toDoubleOrNull()?.let { onSaveRate(currency, it) } }, enabled = rate.toDoubleOrNull() != null) {
+                            Text("Save")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Done") }
         }
     )
 }
@@ -2312,6 +2612,28 @@ private fun upcomingRecurringEntries(
     return entries
         .filter { it.active && it.dayOfMonth > cutoffDay }
         .sortedWith(compareBy<RecurringEntry> { it.dayOfMonth }.thenBy { it.type.name })
+}
+
+private fun convertedSpending(
+    expenses: List<Expense>,
+    preferredCurrency: Currency,
+    rates: Map<String, Double>,
+    enabled: Boolean
+): Double? {
+    if (!enabled) return null
+    var missingRate = false
+    val total = expenses.filterNot { it.isTransfer }.sumOf { expense ->
+        val expenseCurrency = Currency.fromCode(expense.currencyCode)
+        when {
+            expenseCurrency == preferredCurrency -> expense.amount
+            rates[expenseCurrency.code] != null -> expense.amount * rates.getValue(expenseCurrency.code)
+            else -> {
+                missingRate = true
+                0.0
+            }
+        }
+    }
+    return if (missingRate) null else total
 }
 
 private fun parseCurrentPeriodFromSheet(sheetName: String): YearMonth {

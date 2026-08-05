@@ -10,6 +10,8 @@ import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
 import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
+import com.financetracker.data.model.SavingsGoal
+import com.financetracker.data.model.TransactionTemplate
 import com.financetracker.data.model.isTransfer
 import com.financetracker.data.model.spendingTotal
 import com.financetracker.data.repository.GoogleSheetsRepository
@@ -71,6 +73,11 @@ data class FinanceTrackerUiState(
     val currency: Currency = Currency.getDefault(),
     val includeTransfersInReports: Boolean = false,
     val accountBalances: List<AccountBalance> = emptyList(),
+    val transactionTemplates: List<TransactionTemplate> = emptyList(),
+    val savingsGoals: List<SavingsGoal> = emptyList(),
+    val exchangeRates: Map<String, Double> = emptyMap(),
+    val exchangeConversionEnabled: Boolean = false,
+    val biometricLockEnabled: Boolean = false,
     val userMessage: String? = null
 )
 
@@ -80,6 +87,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val savedCurrency = repository.loadCurrency()
     private val savedIncludeTransfersInReports = repository.loadIncludeTransfersInReports()
     private val savedAccountBalances = repository.loadAccountBalances()
+    private val savedTransactionTemplates = repository.loadTransactionTemplates()
+    private val savedSavingsGoals = repository.loadSavingsGoals()
+    private val savedExchangeRates = repository.loadExchangeRates()
+    private val savedExchangeConversionEnabled = repository.loadExchangeConversionEnabled()
+    private val savedBiometricLockEnabled = repository.loadBiometricLockEnabled()
 
     private val _uiState = MutableStateFlow(
         FinanceTrackerUiState(
@@ -88,7 +100,12 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             themeMode = savedThemeMode,
             currency = savedCurrency,
             includeTransfersInReports = savedIncludeTransfersInReports,
-            accountBalances = savedAccountBalances
+            accountBalances = savedAccountBalances,
+            transactionTemplates = savedTransactionTemplates,
+            savingsGoals = savedSavingsGoals,
+            exchangeRates = savedExchangeRates,
+            exchangeConversionEnabled = savedExchangeConversionEnabled,
+            biometricLockEnabled = savedBiometricLockEnabled
         )
     )
     val uiState: StateFlow<FinanceTrackerUiState> = _uiState.asStateFlow()
@@ -323,6 +340,61 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         updateLocalState(_uiState.value.copy(includeTransfersInReports = includeTransfers))
     }
 
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        repository.saveBiometricLockEnabled(enabled)
+        updateLocalState(_uiState.value.copy(biometricLockEnabled = enabled))
+    }
+
+    fun setExchangeConversionEnabled(enabled: Boolean) {
+        repository.saveExchangeConversionEnabled(enabled)
+        updateLocalState(_uiState.value.copy(exchangeConversionEnabled = enabled))
+    }
+
+    fun setExchangeRate(currency: Currency, rateToPreferred: Double) {
+        if (rateToPreferred <= 0.0) return
+        val updatedRates = _uiState.value.exchangeRates + (currency.code to rateToPreferred)
+        repository.saveExchangeRates(updatedRates)
+        updateLocalState(_uiState.value.copy(exchangeRates = updatedRates))
+    }
+
+    fun addTransactionTemplate(template: TransactionTemplate) {
+        val normalized = template.copy(
+            id = template.id.ifBlank { UUID.randomUUID().toString() },
+            name = template.name.trim(),
+            currencyCode = Currency.fromCode(template.currencyCode).code
+        )
+        if (normalized.name.isBlank() || normalized.category.isBlank() || normalized.amount <= 0.0) return
+        val templates = (_uiState.value.transactionTemplates.filterNot { it.id == normalized.id } + normalized)
+            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        repository.saveTransactionTemplates(templates)
+        updateLocalState(_uiState.value.copy(transactionTemplates = templates))
+    }
+
+    fun deleteTransactionTemplate(templateId: String) {
+        val templates = _uiState.value.transactionTemplates.filterNot { it.id == templateId }
+        repository.saveTransactionTemplates(templates)
+        updateLocalState(_uiState.value.copy(transactionTemplates = templates))
+    }
+
+    fun addOrUpdateSavingsGoal(goal: SavingsGoal) {
+        val normalized = goal.copy(
+            id = goal.id.ifBlank { UUID.randomUUID().toString() },
+            name = goal.name.trim(),
+            currencyCode = Currency.fromCode(goal.currencyCode).code
+        )
+        if (normalized.name.isBlank() || normalized.targetAmount <= 0.0) return
+        val goals = (_uiState.value.savingsGoals.filterNot { it.id == normalized.id } + normalized)
+            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        repository.saveSavingsGoals(goals)
+        updateLocalState(_uiState.value.copy(savingsGoals = goals))
+    }
+
+    fun deleteSavingsGoal(goalId: String) {
+        val goals = _uiState.value.savingsGoals.filterNot { it.id == goalId }
+        repository.saveSavingsGoals(goals)
+        updateLocalState(_uiState.value.copy(savingsGoals = goals))
+    }
+
     fun addOrUpdateAccountBalance(name: String, amount: Double, isDebt: Boolean) {
         val normalizedName = name.trim()
         if (normalizedName.isBlank()) return
@@ -367,6 +439,11 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value.copy(
                     accountBalances = repository.loadAccountBalances(),
                     includeTransfersInReports = repository.loadIncludeTransfersInReports(),
+                    transactionTemplates = repository.loadTransactionTemplates(),
+                    savingsGoals = repository.loadSavingsGoals(),
+                    exchangeRates = repository.loadExchangeRates(),
+                    exchangeConversionEnabled = repository.loadExchangeConversionEnabled(),
+                    biometricLockEnabled = repository.loadBiometricLockEnabled(),
                     userMessage = "Latest backup restored."
                 )
             )
@@ -531,11 +608,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleRecurringEntry(entry: RecurringEntry, active: Boolean) {
         val updatedEntry = entry.copy(active = active)
+        updateRecurringEntry(updatedEntry)
+    }
+
+    fun updateRecurringEntry(entry: RecurringEntry) {
         if (!repository.isReadyForLiveSync()) {
             updateLocalState(
                 _uiState.value.copy(
                     recurringEntries = _uiState.value.recurringEntries.map {
-                        if (it.id == entry.id) updatedEntry else it
+                        if (it.id == entry.id) entry else it
                     },
                     syncStatus = buildSyncStatus(isUsingCachedData = true)
                 )
@@ -545,11 +626,33 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             runCatching {
-                repository.updateRecurringEntry(updatedEntry)
+                repository.updateRecurringEntry(entry)
             }.onSuccess {
                 refreshAllData()
             }.onFailure { error ->
                 applyError(error.message ?: "Failed to update recurring entry.")
+            }
+        }
+    }
+
+    fun deleteRecurringEntry(entry: RecurringEntry) {
+        if (!repository.isReadyForLiveSync()) {
+            updateLocalState(
+                _uiState.value.copy(
+                    recurringEntries = _uiState.value.recurringEntries.filterNot { it.id == entry.id },
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.deleteRecurringEntry(entry.id)
+            }.onSuccess {
+                refreshAllData()
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to delete recurring entry.")
             }
         }
     }

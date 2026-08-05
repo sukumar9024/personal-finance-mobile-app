@@ -83,6 +83,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.navigation:navigation-compose:2.9.7")
+    implementation("androidx.biometric:biometric:1.1.0")
 
     // Google Sheets API
     implementation("com.google.api-client:google-api-client-android:2.2.0")

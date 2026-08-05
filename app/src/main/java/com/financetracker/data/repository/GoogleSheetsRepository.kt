@@ -12,7 +12,9 @@ import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
 import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
+import com.financetracker.data.model.SavingsGoal
 import com.financetracker.data.model.TransactionType
+import com.financetracker.data.model.TransactionTemplate
 import com.financetracker.data.model.isTransfer
 import com.financetracker.ui.theme.ThemeMode
 import com.google.api.client.http.javanet.NetHttpTransport
@@ -59,6 +61,11 @@ class GoogleSheetsRepository(private val context: Context) {
         private const val CURRENCY_KEY = "currency"
         private const val ACCOUNT_BALANCES_KEY = "account_balances"
         private const val INCLUDE_TRANSFERS_KEY = "include_transfers_in_reports"
+        private const val TRANSACTION_TEMPLATES_KEY = "transaction_templates"
+        private const val SAVINGS_GOALS_KEY = "savings_goals"
+        private const val EXCHANGE_RATES_KEY = "exchange_rates"
+        private const val EXCHANGE_CONVERSION_ENABLED_KEY = "exchange_conversion_enabled"
+        private const val BIOMETRIC_LOCK_ENABLED_KEY = "biometric_lock_enabled"
         private val EXPENSE_SHEET_REGEX = Regex("""expenses_\d{4}_\d{2}""")
 
         private val DEFAULT_CATEGORIES = listOf(
@@ -230,6 +237,114 @@ class GoogleSheetsRepository(private val context: Context) {
         prefs.edit().putString(ACCOUNT_BALANCES_KEY, json.toString()).apply()
     }
 
+    fun loadTransactionTemplates(): List<TransactionTemplate> {
+        val rawJson = prefs.getString(TRANSACTION_TEMPLATES_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                TransactionTemplate(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    amount = item.optDouble("amount"),
+                    currencyCode = Currency.fromCode(item.optString("currencyCode", Currency.getDefault().code)).code,
+                    category = item.optString("category"),
+                    subcategory = item.optString("subcategory").ifBlank { null },
+                    description = item.optString("description"),
+                    paymentMethod = item.optString("paymentMethod", "Cash")
+                )
+            }.filter { it.id.isNotBlank() && it.name.isNotBlank() && it.category.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveTransactionTemplates(templates: List<TransactionTemplate>) {
+        val json = JSONArray().apply {
+            templates.forEach { template ->
+                put(JSONObject().apply {
+                    put("id", template.id)
+                    put("name", template.name)
+                    put("amount", template.amount)
+                    put("currencyCode", Currency.fromCode(template.currencyCode).code)
+                    put("category", template.category)
+                    put("subcategory", template.subcategory)
+                    put("description", template.description)
+                    put("paymentMethod", template.paymentMethod)
+                })
+            }
+        }
+        prefs.edit().putString(TRANSACTION_TEMPLATES_KEY, json.toString()).apply()
+    }
+
+    fun loadSavingsGoals(): List<SavingsGoal> {
+        val rawJson = prefs.getString(SAVINGS_GOALS_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                SavingsGoal(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    targetAmount = item.optDouble("targetAmount"),
+                    currentAmount = item.optDouble("currentAmount"),
+                    currencyCode = Currency.fromCode(item.optString("currencyCode", Currency.getDefault().code)).code
+                )
+            }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveSavingsGoals(goals: List<SavingsGoal>) {
+        val json = JSONArray().apply {
+            goals.forEach { goal ->
+                put(JSONObject().apply {
+                    put("id", goal.id)
+                    put("name", goal.name)
+                    put("targetAmount", goal.targetAmount)
+                    put("currentAmount", goal.currentAmount)
+                    put("currencyCode", Currency.fromCode(goal.currencyCode).code)
+                })
+            }
+        }
+        prefs.edit().putString(SAVINGS_GOALS_KEY, json.toString()).apply()
+    }
+
+    fun loadExchangeRates(): Map<String, Double> {
+        val rawJson = prefs.getString(EXCHANGE_RATES_KEY, null) ?: return emptyMap()
+        return runCatching {
+            val json = JSONObject(rawJson)
+            Currency.entries.mapNotNull { currency ->
+                val rate = json.optDouble(currency.code, Double.NaN)
+                if (rate.isNaN() || rate <= 0.0) null else currency.code to rate
+            }.toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+    fun saveExchangeRates(rates: Map<String, Double>) {
+        val json = JSONObject().apply {
+            rates.forEach { (code, rate) ->
+                if (Currency.entries.any { it.code == code } && rate > 0.0) {
+                    put(code, rate)
+                }
+            }
+        }
+        prefs.edit().putString(EXCHANGE_RATES_KEY, json.toString()).apply()
+    }
+
+    fun loadExchangeConversionEnabled(): Boolean {
+        return prefs.getBoolean(EXCHANGE_CONVERSION_ENABLED_KEY, false)
+    }
+
+    fun saveExchangeConversionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(EXCHANGE_CONVERSION_ENABLED_KEY, enabled).apply()
+    }
+
+    fun loadBiometricLockEnabled(): Boolean {
+        return prefs.getBoolean(BIOMETRIC_LOCK_ENABLED_KEY, false)
+    }
+
+    fun saveBiometricLockEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(BIOMETRIC_LOCK_ENABLED_KEY, enabled).apply()
+    }
+
     fun exportTransactionsCsv(expenses: List<Expense>, incomeEntries: List<IncomeEntry>): String {
         val exportDir = getExportDir()
         val file = File(exportDir, "finance_export_${System.currentTimeMillis()}.csv")
@@ -320,7 +435,12 @@ class GoogleSheetsRepository(private val context: Context) {
         val backupJson = JSONObject().apply {
             put("cachedFinanceData", prefs.getString(CACHE_KEY, null))
             put("accountBalances", prefs.getString(ACCOUNT_BALANCES_KEY, null))
+            put("transactionTemplates", prefs.getString(TRANSACTION_TEMPLATES_KEY, null))
+            put("savingsGoals", prefs.getString(SAVINGS_GOALS_KEY, null))
+            put("exchangeRates", prefs.getString(EXCHANGE_RATES_KEY, null))
             put("includeTransfersInReports", loadIncludeTransfersInReports())
+            put("exchangeConversionEnabled", loadExchangeConversionEnabled())
+            put("biometricLockEnabled", loadBiometricLockEnabled())
             put("themeMode", prefs.getString(THEME_MODE_KEY, ThemeMode.SYSTEM.name))
             put("currency", prefs.getString(CURRENCY_KEY, Currency.getDefault().code))
         }
@@ -343,7 +463,18 @@ class GoogleSheetsRepository(private val context: Context) {
                 backupJson.optString("accountBalances").takeIf { it.isNotBlank() && it != "null" }?.let {
                     putString(ACCOUNT_BALANCES_KEY, it)
                 }
+                backupJson.optString("transactionTemplates").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(TRANSACTION_TEMPLATES_KEY, it)
+                }
+                backupJson.optString("savingsGoals").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(SAVINGS_GOALS_KEY, it)
+                }
+                backupJson.optString("exchangeRates").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(EXCHANGE_RATES_KEY, it)
+                }
                 putBoolean(INCLUDE_TRANSFERS_KEY, backupJson.optBoolean("includeTransfersInReports", false))
+                putBoolean(EXCHANGE_CONVERSION_ENABLED_KEY, backupJson.optBoolean("exchangeConversionEnabled", false))
+                putBoolean(BIOMETRIC_LOCK_ENABLED_KEY, backupJson.optBoolean("biometricLockEnabled", false))
                 backupJson.optString("themeMode").takeIf { it.isNotBlank() }?.let { putString(THEME_MODE_KEY, it) }
                 backupJson.optString("currency").takeIf { it.isNotBlank() }?.let { putString(CURRENCY_KEY, it) }
                 apply()
@@ -916,6 +1047,30 @@ class GoogleSheetsRepository(private val context: Context) {
             )
             .setValueInputOption("RAW")
             .execute()
+
+        true
+    }
+
+    suspend fun deleteRecurringEntry(entryId: String): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        val rowIndex = findRecurringRowIndex(service, entryId)
+        if (rowIndex <= 1) return@withContext false
+        val sheetId = ensureRecurringSheet(service).sheetId ?: return@withContext false
+
+        val deleteRequest = Request().setDeleteDimension(
+            DeleteDimensionRequest().setRange(
+                DimensionRange()
+                    .setSheetId(sheetId)
+                    .setDimension("ROWS")
+                    .setStartIndex(rowIndex - 1)
+                    .setEndIndex(rowIndex)
+            )
+        )
+
+        service.spreadsheets().batchUpdate(
+            spreadsheetId,
+            BatchUpdateSpreadsheetRequest().setRequests(listOf(deleteRequest))
+        ).execute()
 
         true
     }

@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
+import com.financetracker.data.model.TransactionTemplate
 import com.financetracker.data.model.TransactionType
 import com.financetracker.ui.theme.SectionHeader
 import com.financetracker.ui.theme.Shapes
@@ -104,6 +105,8 @@ fun AddExpenseScreen(
     var date by remember { mutableStateOf(defaultDate) }
     var amount by remember { mutableStateOf("") }
     var selectedCurrency by remember { mutableStateOf(currency) }
+    var templateName by remember { mutableStateOf("") }
+    var templateExpanded by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("") }
     var subcategory by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -383,6 +386,102 @@ fun AddExpenseScreen(
                             )
                         }
                     }
+                }
+            }
+
+            InputSection(
+                title = "Templates",
+                subtitle = "Reuse or save common expenses"
+            ) {
+                ExposedDropdownMenuBox(
+                    expanded = templateExpanded,
+                    onExpandedChange = { templateExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = "Apply template",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Saved templates") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = templateExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        shape = Shapes.medium
+                    )
+                    DropdownMenu(
+                        expanded = templateExpanded,
+                        onDismissRequest = { templateExpanded = false }
+                    ) {
+                        if (uiState.transactionTemplates.isEmpty()) {
+                            DropdownMenuItem(text = { Text("No templates saved") }, onClick = { templateExpanded = false })
+                        }
+                        uiState.transactionTemplates.forEach { template ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text(template.name, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "${Currency.fromCode(template.currencyCode).symbol}${template.amount} • ${template.category}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        IconButton(onClick = { viewModel.deleteTransactionTemplate(template.id) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete template")
+                                        }
+                                    }
+                                },
+                                onClick = {
+                                    amount = template.amount.toEditableAmount()
+                                    selectedCurrency = Currency.fromCode(template.currencyCode)
+                                    selectedCategory = template.category
+                                    subcategory = template.subcategory.orEmpty()
+                                    description = template.description
+                                    paymentMethod = template.paymentMethod
+                                    templateExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(Spacing.md))
+                OutlinedTextField(
+                    value = templateName,
+                    onValueChange = { templateName = it },
+                    label = { Text("Template name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = Shapes.medium
+                )
+                Spacer(modifier = Modifier.height(Spacing.md))
+                OutlinedButton(
+                    onClick = {
+                        viewModel.addTransactionTemplate(
+                            TransactionTemplate(
+                                id = UUID.randomUUID().toString(),
+                                name = templateName,
+                                amount = amountValue,
+                                currencyCode = selectedCurrency.code,
+                                category = selectedCategory.ifBlank { "Other" },
+                                subcategory = subcategory.takeIf { it.isNotBlank() },
+                                description = description,
+                                paymentMethod = paymentMethod
+                            )
+                        )
+                        templateName = ""
+                    },
+                    enabled = templateName.isNotBlank() && amountValue > 0.0 && selectedCategory.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = Shapes.medium
+                ) {
+                    Text("Save Current As Template")
                 }
             }
 
@@ -732,4 +831,10 @@ internal fun InputSection(
             content()
         }
     }
+}
+
+private fun Double.toEditableAmount(): String {
+    if (this <= 0.0) return ""
+    val integerValue = toLong()
+    return if (this == integerValue.toDouble()) integerValue.toString() else toString()
 }

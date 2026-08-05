@@ -259,6 +259,28 @@ item {
     }
 }
 
+item {
+    SettingsSection(
+        title = "Security & Conversion",
+        subtitle = "Protect the app and choose optional currency conversion"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            SettingsSwitchRow(
+                title = "Biometric lock",
+                subtitle = "Works on debug installs when biometrics or device PIN is enrolled.",
+                checked = uiState.biometricLockEnabled,
+                onCheckedChange = viewModel::setBiometricLockEnabled
+            )
+            SettingsSwitchRow(
+                title = "Exchange conversion",
+                subtitle = "Show converted spending totals using your manual rates.",
+                checked = uiState.exchangeConversionEnabled,
+                onCheckedChange = viewModel::setExchangeConversionEnabled
+            )
+        }
+    }
+}
+
             item {
                 SettingsSection(
                     title = "About",
@@ -429,6 +451,37 @@ private fun ThemeOption(
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (selected) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.md),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
             )
         }
     }

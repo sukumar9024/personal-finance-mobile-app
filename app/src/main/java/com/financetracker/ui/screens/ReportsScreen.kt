@@ -127,6 +127,7 @@ fun ReportsScreen(
     var recurringIncomeAmount by rememberSaveable { mutableStateOf("") }
     var recurringIncomeDay by rememberSaveable { mutableStateOf("1") }
     var recurringIncomeTitle by rememberSaveable { mutableStateOf("Monthly income") }
+    var editingRecurringEntryId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val categoryOptions = listOf("All categories") + categories.map { it.name }
     if (selectedCategory !in categoryOptions) selectedCategory = "All categories"
@@ -269,7 +270,9 @@ fun ReportsScreen(
                 recurringEntries = uiState.recurringEntries,
                 onToggleActive = { entry, active ->
                     viewModel.toggleRecurringEntry(entry, active)
-                }
+                },
+                onEditEntry = { editingRecurringEntryId = it.id },
+                onDeleteEntry = viewModel::deleteRecurringEntry
             )
         }
     }
@@ -366,6 +369,23 @@ fun ReportsScreen(
                 }
             }
         )
+    }
+
+    editingRecurringEntryId?.let { entryId ->
+        val entry = uiState.recurringEntries.firstOrNull { it.id == entryId }
+        if (entry != null) {
+            EditRecurringEntryDialog(
+                entry = entry,
+                categories = categories,
+                onSave = {
+                    viewModel.updateRecurringEntry(it)
+                    editingRecurringEntryId = null
+                },
+                onDismiss = { editingRecurringEntryId = null }
+            )
+        } else {
+            editingRecurringEntryId = null
+        }
     }
 }
 
@@ -1175,7 +1195,9 @@ private fun TopMerchantsCard(
 @Composable
 private fun RecurringPlansCard(
     recurringEntries: List<RecurringEntry>,
-    onToggleActive: (RecurringEntry, Boolean) -> Unit
+    onToggleActive: (RecurringEntry, Boolean) -> Unit,
+    onEditEntry: (RecurringEntry) -> Unit,
+    onDeleteEntry: (RecurringEntry) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1214,12 +1236,82 @@ private fun RecurringPlansCard(
                                 checked = entry.active,
                                 onCheckedChange = { onToggleActive(entry, it) }
                             )
+                            TextButton(onClick = { onEditEntry(entry) }) {
+                                Text("Edit")
+                            }
+                            IconButton(onClick = { onDeleteEntry(entry) }) {
+                                Icon(Icons.Default.Store, contentDescription = "Delete recurring entry")
+                            }
                         }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun EditRecurringEntryDialog(
+    entry: RecurringEntry,
+    categories: List<Category>,
+    onSave: (RecurringEntry) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var title by rememberSaveable(entry.id) { mutableStateOf(entry.title) }
+    var amount by rememberSaveable(entry.id) { mutableStateOf(entry.amount.toEditableAmount()) }
+    var day by rememberSaveable(entry.id) { mutableStateOf(entry.dayOfMonth.toString()) }
+    var category by rememberSaveable(entry.id) { mutableStateOf(entry.category.orEmpty()) }
+    var description by rememberSaveable(entry.id) { mutableStateOf(entry.description) }
+    var paymentMethod by rememberSaveable(entry.id) { mutableStateOf(entry.paymentMethod) }
+    var active by rememberSaveable(entry.id) { mutableStateOf(entry.active) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Recurring Entry") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, singleLine = true)
+                OutlinedTextField(value = amount, onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Amount") }, singleLine = true)
+                OutlinedTextField(value = day, onValueChange = { day = it.filter(Char::isDigit).take(2) }, label = { Text("Day of month") }, singleLine = true)
+                if (entry.type == RecurringType.EXPENSE) {
+                    TrendDropdown(
+                        label = "Category",
+                        selectedValue = category.ifBlank { "Other" },
+                        options = categories.map { it.name }.ifEmpty { listOf("Other") },
+                        onOptionSelected = { category = it }
+                    )
+                    OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
+                    OutlinedTextField(value = paymentMethod, onValueChange = { paymentMethod = it }, label = { Text("Payment method") }, singleLine = true)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Active", style = MaterialTheme.typography.labelLarge)
+                    androidx.compose.material3.Switch(checked = active, onCheckedChange = { active = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        entry.copy(
+                            title = title.ifBlank { entry.title },
+                            amount = amount.toDoubleOrNull() ?: entry.amount,
+                            dayOfMonth = day.toIntOrNull()?.coerceIn(1, 31) ?: entry.dayOfMonth,
+                            category = category.ifBlank { entry.category },
+                            description = description,
+                            paymentMethod = paymentMethod.ifBlank { "Cash" },
+                            active = active
+                        )
+                    )
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 private data class MonthComparison(
