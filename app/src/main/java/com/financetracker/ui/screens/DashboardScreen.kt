@@ -23,7 +23,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -31,6 +35,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -50,6 +55,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -120,6 +126,7 @@ fun DashboardScreen(
     var quickAddAmount by remember { mutableStateOf("") }
     var quickAddCategory by remember { mutableStateOf("") }
     var quickAddAccount by remember { mutableStateOf("Cash") }
+    var clearAction by remember { mutableStateOf<ClearAction?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val averageSpend = if (uiState.expenses.isNotEmpty()) {
@@ -143,6 +150,18 @@ fun DashboardScreen(
     val currentMonthText = uiState.currentMonthSheet
         .removePrefix("expenses_")
         .replace("_", " / ")
+    val selectedMonth = parseCurrentPeriodFromSheet(uiState.currentMonthSheet)
+    val selectedQuickAddDate = LocalDate.now().let { today ->
+        if (YearMonth.from(today) == selectedMonth) {
+            today
+        } else {
+            selectedMonth.atDay(today.dayOfMonth.coerceAtMost(selectedMonth.lengthOfMonth()))
+        }
+    }
+    val clearDates = uiState.expenses
+        .map { it.date }
+        .distinct()
+        .sortedDescending()
     val errorMessage = uiState.errorMessage
     val remainingAmount = uiState.monthlyIncome - uiState.totalAmount
     val parsedBudget = budgetInput.toDoubleOrNull()
@@ -171,7 +190,7 @@ fun DashboardScreen(
     }.sortedWith(sortComparator(selectedSort))
     val quickAddDuplicate = quickAddAmount.toDoubleOrNull()?.let { amount ->
         uiState.expenses.firstOrNull { expense ->
-            expense.date == LocalDate.now() &&
+            expense.date == selectedQuickAddDate &&
                 expense.category == quickAddCategory &&
                 expense.paymentMethod == quickAddAccount &&
                 kotlin.math.abs(expense.amount - amount) < 0.001
@@ -270,6 +289,8 @@ fun DashboardScreen(
             item {
                 DashboardControlCard(
                     currentMonthText = currentMonthText,
+                    selectedMonth = selectedMonth,
+                    onMonthChange = { viewModel.selectMonth(it.toString()) },
                     budgetInput = budgetInput,
                     onBudgetInputChange = { value ->
                         budgetInput = value.filter { it.isDigit() || it == '.' }
@@ -286,7 +307,11 @@ fun DashboardScreen(
                     lastSyncedText = lastSyncedText,
                     lastAttemptText = lastAttemptText,
                     refreshLabel = refreshLabel,
-                    currency = currency
+                    currency = currency,
+                    clearDates = clearDates,
+                    onClearDay = { clearAction = ClearAction.Day(it) },
+                    onClearMonth = { clearAction = ClearAction.Month(selectedMonth) },
+                    onClearAll = { clearAction = ClearAction.All }
                 )
             }
 
@@ -305,7 +330,7 @@ fun DashboardScreen(
                     onSave = {
                         quickAddAmount.toDoubleOrNull()?.let { amount ->
                             val expense = Expense(
-                                date = LocalDate.now(),
+                                date = selectedQuickAddDate,
                                 amount = amount,
                                 category = quickAddCategory.ifBlank { "Other" },
                                 paymentMethod = quickAddAccount
@@ -487,6 +512,55 @@ fun DashboardScreen(
                 }
             }
         }
+    }
+
+    clearAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { clearAction = null },
+            title = { Text(action.title()) },
+            text = { Text(action.message()) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        when (action) {
+                            is ClearAction.Day -> viewModel.clearTransactionsForDay(action.date)
+                            is ClearAction.Month -> viewModel.clearTransactionsForSelectedMonth()
+                            ClearAction.All -> viewModel.clearAllTransactions()
+                        }
+                        clearAction = null
+                    }
+                ) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearAction = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+private sealed interface ClearAction {
+    data class Day(val date: LocalDate) : ClearAction
+    data class Month(val month: YearMonth) : ClearAction
+    data object All : ClearAction
+}
+
+private fun ClearAction.title(): String {
+    return when (this) {
+        is ClearAction.Day -> "Clear Day"
+        is ClearAction.Month -> "Clear Month"
+        ClearAction.All -> "Clear All Data"
+    }
+}
+
+private fun ClearAction.message(): String {
+    return when (this) {
+        is ClearAction.Day -> "Clear every transaction from ${date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))}?"
+        is ClearAction.Month -> "Clear every transaction from ${month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))}?"
+        ClearAction.All -> "Clear every transaction from every month? Categories, monthly budgets, and income settings will stay."
     }
 }
 
@@ -689,6 +763,8 @@ private fun QuickActionsRow(
 @Composable
 private fun DashboardControlCard(
     currentMonthText: String,
+    selectedMonth: YearMonth,
+    onMonthChange: (YearMonth) -> Unit,
     budgetInput: String,
     onBudgetInputChange: (String) -> Unit,
     onSaveBudget: () -> Unit,
@@ -701,8 +777,14 @@ private fun DashboardControlCard(
     lastSyncedText: String,
     lastAttemptText: String,
     refreshLabel: String,
-    currency: Currency = Currency.getDefault()
+    currency: Currency = Currency.getDefault(),
+    clearDates: List<LocalDate>,
+    onClearDay: (LocalDate) -> Unit,
+    onClearMonth: () -> Unit,
+    onClearAll: () -> Unit
 ) {
+    var clearDayExpanded by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = Shapes.extraLarge,
@@ -717,6 +799,48 @@ private fun DashboardControlCard(
                 title = "Budget & Sync",
                 subtitle = "Keep this month updated and editable from the home screen"
             )
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.large,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.sm, vertical = Spacing.xs),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = { onMonthChange(selectedMonth.minusMonths(1)) },
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.ChevronLeft, contentDescription = "Previous month")
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = selectedMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault())),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    IconButton(
+                        onClick = { onMonthChange(selectedMonth.plusMonths(1)) },
+                        enabled = !isLoading
+                    ) {
+                        Icon(Icons.Default.ChevronRight, contentDescription = "Next month")
+                    }
+                }
+            }
 
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -823,6 +947,80 @@ private fun DashboardControlCard(
                     )
                     Spacer(modifier = Modifier.width(Spacing.sm))
                     Text(if (isLoading) "Refreshing" else refreshLabel)
+                }
+            }
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.large,
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.16f)
+            ) {
+                Column(
+                    modifier = Modifier.padding(Spacing.md),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.sm)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = "Data Management",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            OutlinedButton(
+                                onClick = { clearDayExpanded = true },
+                                enabled = clearDates.isNotEmpty() && !isLoading,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = Shapes.medium
+                            ) {
+                                Text("Clear Day")
+                            }
+                            DropdownMenu(
+                                expanded = clearDayExpanded,
+                                onDismissRequest = { clearDayExpanded = false }
+                            ) {
+                                clearDates.forEach { date ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(date.format(DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())))
+                                        },
+                                        onClick = {
+                                            clearDayExpanded = false
+                                            onClearDay(date)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onClearMonth,
+                            enabled = entryCount > 0 && !isLoading,
+                            modifier = Modifier.weight(1f),
+                            shape = Shapes.medium
+                        ) {
+                            Text("Clear Month")
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = onClearAll,
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = Shapes.medium
+                    ) {
+                        Text("Clear All Transactions")
+                    }
                 }
             }
         }

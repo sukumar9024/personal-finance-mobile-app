@@ -69,6 +69,7 @@ import com.financetracker.ui.theme.formatCurrency
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 import com.financetracker.ui.viewmodel.SplitExpenseInput
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -88,9 +89,19 @@ fun AddExpenseScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val currency = uiState.currency
+    val selectedMonth = runCatching {
+        YearMonth.parse(uiState.currentMonthSheet.removePrefix("expenses_").replace("_", "-"))
+    }.getOrDefault(YearMonth.now())
+    val defaultDate = LocalDate.now().let { today ->
+        if (YearMonth.from(today) == selectedMonth) {
+            today
+        } else {
+            selectedMonth.atDay(today.dayOfMonth.coerceAtMost(selectedMonth.lengthOfMonth()))
+        }
+    }
 
     var entryMode by remember { mutableStateOf(EntryMode.EXPENSE) }
-    var date by remember { mutableStateOf(LocalDate.now()) }
+    var date by remember { mutableStateOf(defaultDate) }
     var amount by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("") }
     var subcategory by remember { mutableStateOf("") }

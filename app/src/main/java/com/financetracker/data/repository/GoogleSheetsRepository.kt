@@ -108,7 +108,8 @@ class GoogleSheetsRepository(private val context: Context) {
         val reportExpenses: List<Expense>,
         val categories: List<Category>,
         val incomeEntries: List<IncomeEntry>,
-        val recurringEntries: List<RecurringEntry>
+        val recurringEntries: List<RecurringEntry>,
+        val categoryBudgets: List<CategoryBudget> = emptyList()
     )
 
     data class SyncSnapshot(
@@ -140,6 +141,15 @@ class GoogleSheetsRepository(private val context: Context) {
     fun getCurrentMonthSheetName(): String {
         val now = LocalDate.now()
         return "expenses_${now.year}_${String.format(Locale.US, "%02d", now.monthValue)}"
+    }
+
+    fun getSheetNameForPeriod(period: String): String {
+        val normalizedPeriod = normalizePeriod(period)
+        return "expenses_${normalizedPeriod.replace("-", "_")}"
+    }
+
+    fun getPeriodForSheet(sheetName: String): String {
+        return periodFromSheet(sheetName)
     }
 
     fun isReadyForLiveSync(): Boolean {
@@ -184,7 +194,8 @@ class GoogleSheetsRepository(private val context: Context) {
                 reportExpenses = json.optJSONArray("reportExpenses").toExpenseList(),
                 categories = json.optJSONArray("categories").toCategoryList(),
                 incomeEntries = json.optJSONArray("incomeEntries").toIncomeEntryList(),
-                recurringEntries = json.optJSONArray("recurringEntries").toRecurringEntryList()
+                recurringEntries = json.optJSONArray("recurringEntries").toRecurringEntryList(),
+                categoryBudgets = json.optJSONArray("categoryBudgets").toCategoryBudgetList()
             )
         }.getOrNull()
     }
@@ -197,6 +208,7 @@ class GoogleSheetsRepository(private val context: Context) {
             put("categories", JSONArray().apply { data.categories.forEach { put(it.toJson()) } })
             put("incomeEntries", JSONArray().apply { data.incomeEntries.forEach { put(it.toJson()) } })
             put("recurringEntries", JSONArray().apply { data.recurringEntries.forEach { put(it.toJson()) } })
+            put("categoryBudgets", JSONArray().apply { data.categoryBudgets.forEach { put(it.toJson()) } })
         }
 
         prefs.edit().putString(CACHE_KEY, json.toString()).apply()
@@ -274,6 +286,61 @@ class GoogleSheetsRepository(private val context: Context) {
             spreadsheetId,
             BatchUpdateSpreadsheetRequest().setRequests(listOf(deleteRequest))
         ).execute()
+
+        true
+    }
+
+    suspend fun clearExpensesForDay(sheetName: String, date: LocalDate): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        val sheetId = ensureExpenseSheet(service, sheetName).sheetId ?: return@withContext false
+        val rowIndexes = readExpensesFromSheet(service, sheetName)
+            .filter { it.date == date }
+            .map { it.sheetRowIndex }
+            .filter { it > 1 }
+            .sortedDescending()
+
+        if (rowIndexes.isEmpty()) return@withContext true
+
+        val requests = rowIndexes.map { rowIndex ->
+            Request().setDeleteDimension(
+                DeleteDimensionRequest().setRange(
+                    DimensionRange()
+                        .setSheetId(sheetId)
+                        .setDimension("ROWS")
+                        .setStartIndex(rowIndex - 1)
+                        .setEndIndex(rowIndex)
+                )
+            )
+        }
+
+        service.spreadsheets().batchUpdate(
+            spreadsheetId,
+            BatchUpdateSpreadsheetRequest().setRequests(requests)
+        ).execute()
+
+        true
+    }
+
+    suspend fun clearExpensesForMonth(sheetName: String): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        ensureExpenseSheet(service, sheetName)
+
+        service.spreadsheets().values()
+            .clear(spreadsheetId, "$sheetName!A2:P", ClearValuesRequest())
+            .execute()
+
+        true
+    }
+
+    suspend fun clearAllExpenses(): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+
+        getExpenseSheetTitles(service).forEach { sheetName ->
+            ensureExpenseSheet(service, sheetName)
+            service.spreadsheets().values()
+                .clear(spreadsheetId, "$sheetName!A2:P", ClearValuesRequest())
+                .execute()
+        }
 
         true
     }
@@ -780,6 +847,7 @@ class GoogleSheetsRepository(private val context: Context) {
             val categories = fetchCategories()
             val incomeEntries = fetchIncomeEntries()
             val recurringEntries = fetchRecurringEntries()
+            val categoryBudgets = fetchAllCategoryBudgets()
             
             // Apply recurring entries
             val appliedData = applyRecurringEntries(
@@ -798,7 +866,8 @@ class GoogleSheetsRepository(private val context: Context) {
                     reportExpenses = appliedData.reportExpenses,
                     categories = categories,
                     incomeEntries = appliedData.incomeEntries,
-                    recurringEntries = recurringEntries
+                    recurringEntries = recurringEntries,
+                    categoryBudgets = categoryBudgets
                 )
             )
             
@@ -1398,6 +1467,11 @@ class GoogleSheetsRepository(private val context: Context) {
         return List(length()) { index -> getJSONObject(index).toRecurringEntry() }
     }
 
+    private fun JSONArray?.toCategoryBudgetList(): List<CategoryBudget> {
+        if (this == null) return emptyList()
+        return List(length()) { index -> getJSONObject(index).toCategoryBudget() }
+    }
+
     private fun JSONObject.toExpense(): Expense {
         return Expense(
             id = optString("id"),
@@ -1452,6 +1526,16 @@ class GoogleSheetsRepository(private val context: Context) {
             description = optString("description"),
             paymentMethod = optString("paymentMethod", "Cash"),
             active = optBoolean("active", true),
+            sheetRowIndex = optInt("sheetRowIndex", -1)
+        )
+    }
+
+    private fun JSONObject.toCategoryBudget(): CategoryBudget {
+        return CategoryBudget(
+            id = optString("id"),
+            category = optString("category"),
+            period = normalizePeriod(optString("period")),
+            amount = optDouble("amount"),
             sheetRowIndex = optInt("sheetRowIndex", -1)
         )
     }

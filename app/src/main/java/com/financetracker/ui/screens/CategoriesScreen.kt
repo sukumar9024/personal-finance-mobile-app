@@ -112,7 +112,7 @@ fun CategoriesScreen(
         .associateBy { it.category }
     
     // Get spend by category for selected month
-    val expensesForMonth = uiState.expenses.filter { 
+    val expensesForMonth = uiState.reportExpenses.ifEmpty { uiState.expenses }.filter {
         YearMonth.from(it.date) == selectedMonth 
     }
     val spendByCategory = expensesForMonth.groupBy { it.category }
@@ -162,7 +162,10 @@ fun CategoriesScreen(
                             totalBudget = categoryBudgets.values.sumOf { it.amount },
                             totalSpent = spendByCategory.values.sum(),
                             currency = currency,
-                            onMonthChange = { selectedMonth = it }
+                            onMonthChange = {
+                                selectedMonth = it
+                                viewModel.selectMonth(it.toString())
+                            }
                         )
                         
                         // Category Grid
