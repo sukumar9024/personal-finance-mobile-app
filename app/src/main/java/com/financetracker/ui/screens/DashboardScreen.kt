@@ -31,8 +31,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
@@ -432,7 +430,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("monthly_overview", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("monthly_overview", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     BalanceCard(
                         monthlyIncome = uiState.monthlyIncome,
                         totalAmount = selectedMonthSpending,
@@ -445,7 +443,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("savings_dashboard", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("savings_dashboard", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     SavingsDashboardCard(
                         selectedSummary = selectedSavingsSummary,
                         totalSavings = totalSavings,
@@ -460,7 +458,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("spending_calendar", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("spending_calendar", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     CalendarSpendingCard(
                         selectedMonth = selectedMonth,
                         expenses = visibleMonthExpenses,
@@ -478,7 +476,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("multi_currency", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("multi_currency", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     MultiCurrencyExpenditureCard(
                         selectedMonth = selectedMonth,
                         summaries = currencyExpenseSummaries
@@ -487,7 +485,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("exchange_conversion", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("exchange_conversion", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     ExchangeConversionCard(
                         preferredCurrency = currency,
                         convertedSpending = convertedMonthSpending,
@@ -499,7 +497,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("operating_view", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("operating_view", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     UsefulDashboardCard(
                         selectedMonth = selectedMonth,
                         dailyBurnRate = dailyBurnRate,
@@ -513,7 +511,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("net_worth", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("net_worth", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     NetWorthCard(
                         balances = uiState.accountBalances,
                         currency = currency,
@@ -523,7 +521,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("savings_goals", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("savings_goals", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     SavingsGoalsCard(
                         goals = uiState.savingsGoals,
                         suggestedSavings = selectedSavingsSummary.savings.coerceAtLeast(0.0),
@@ -534,7 +532,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("month_data", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("month_data", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     DashboardControlCard(
                         currentMonthText = currentMonthText,
                         selectedMonth = selectedMonth,
@@ -585,7 +583,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("quick_add", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("quick_add", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     QuickAddCard(
                         amount = quickAddAmount,
                         onAmountChange = { quickAddAmount = it.filter { char -> char.isDigit() || char == '.' } },
@@ -626,7 +624,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("quick_actions", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("quick_actions", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     QuickActionsRow(
                         onReportsClick = onReportsClick,
                         onCategoriesClick = onCategoriesClick,
@@ -637,7 +635,7 @@ fun DashboardScreen(
 
             if (highlightedCategories.isNotEmpty() && dashboardCardVisible("top_categories", selectedDashboardGroup, uiState.dashboardCardPreferences)) {
                 item {
-                    DashboardFeatureContainer("top_categories", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    DashboardFeatureContainer("top_categories", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
                             SectionHeader(
                                 title = "Top Categories",
@@ -686,7 +684,7 @@ fun DashboardScreen(
             }
 
             item {
-                DashboardFeatureContainer("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                DashboardFeatureContainer("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences) {
                     TransactionFilterCard(
                         searchQuery = searchQuery,
                         onSearchQueryChange = { searchQuery = it },
@@ -993,31 +991,13 @@ private fun DashboardFeatureContainer(
     cardId: String,
     selectedGroup: String,
     preferences: List<DashboardCardPreference>,
-    onToggleCollapsed: (String) -> Unit,
     content: @Composable () -> Unit
 ) {
     val preference = preferences.firstOrNull { it.id == cardId }
         ?: DashboardCardPreference(cardId, cardId.replace("_", " ").replaceFirstChar { it.uppercase() })
     if (!preference.visible || preference.group != selectedGroup) return
 
-    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(onClick = { onToggleCollapsed(cardId) }) {
-                Icon(
-                    imageVector = if (preference.collapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                    contentDescription = if (preference.collapsed) "Expand ${preference.title}" else "Collapse ${preference.title}",
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(if (preference.collapsed) "Show ${preference.title}" else "Collapse")
-            }
-        }
-        if (!preference.collapsed) {
-            content()
-        }
-    }
+    content()
 }
 
 private fun dashboardCardVisible(cardId: String, selectedGroup: String, preferences: List<DashboardCardPreference>): Boolean {

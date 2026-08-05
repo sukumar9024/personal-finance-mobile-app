@@ -373,8 +373,7 @@ class GoogleSheetsRepository(private val context: Context) {
                     title = item.optString("title"),
                     group = item.optString("group", "Overview"),
                     sortOrder = item.optInt("sortOrder", index),
-                    visible = item.optBoolean("visible", true),
-                    collapsed = item.optBoolean("collapsed", false)
+                    visible = item.optBoolean("visible", true)
                 )
             }.filter { it.id.isNotBlank() }
         }.getOrDefault(emptyList())
@@ -397,7 +396,6 @@ class GoogleSheetsRepository(private val context: Context) {
                             put("group", defaultsById.getValue(preference.id).group)
                             put("sortOrder", preference.sortOrder)
                             put("visible", preference.visible)
-                            put("collapsed", preference.collapsed)
                         }
                     )
                 }

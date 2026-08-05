@@ -402,10 +402,6 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         updateDashboardPreference(cardId) { it.copy(visible = visible) }
     }
 
-    fun toggleDashboardCardCollapsed(cardId: String) {
-        updateDashboardPreference(cardId) { it.copy(collapsed = !it.collapsed) }
-    }
-
     fun moveDashboardCard(cardId: String, direction: Int) {
         if (direction == 0) return
         val preferences = _uiState.value.dashboardCardPreferences.ifEmpty {

@@ -314,7 +314,6 @@ item {
                     title = preference.title,
                     group = preference.group,
                     visible = preference.visible,
-                    collapsed = preference.collapsed,
                     canMoveUp = index > 0,
                     canMoveDown = index < uiState.dashboardCardPreferences.lastIndex,
                     onVisibleChange = { viewModel.setDashboardCardVisibility(preference.id, it) },
@@ -584,7 +583,6 @@ private fun DashboardCardPreferenceRow(
     title: String,
     group: String,
     visible: Boolean,
-    collapsed: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onVisibleChange: (Boolean) -> Unit,
@@ -627,7 +625,7 @@ private fun DashboardCardPreferenceRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                 Text(
-                    text = "$group • ${if (visible) if (collapsed) "visible, collapsed" else "visible" else "hidden"}",
+                    text = "$group • ${if (visible) "visible" else "hidden"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
