@@ -113,7 +113,8 @@ fun CategoriesScreen(
     
     // Get spend by category for selected month
     val expensesForMonth = uiState.reportExpenses.ifEmpty { uiState.expenses }.filter {
-        YearMonth.from(it.date) == selectedMonth 
+        YearMonth.from(it.date) == selectedMonth &&
+            Currency.fromCode(it.currencyCode) == uiState.currency
     }
     val spendByCategory = expensesForMonth.groupBy { it.category }
         .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }

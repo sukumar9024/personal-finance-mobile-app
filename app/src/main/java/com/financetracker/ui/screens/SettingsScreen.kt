@@ -221,6 +221,44 @@ item {
     }
 }
 
+item {
+    SettingsSection(
+        title = "Reports",
+        subtitle = "Choose how dashboard and reports calculate totals"
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = Shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(Spacing.md),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Include transfers",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Transfers are excluded from savings by default.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = uiState.includeTransfersInReports,
+                    onCheckedChange = viewModel::setIncludeTransfersInReports
+                )
+            }
+        }
+    }
+}
+
             item {
                 SettingsSection(
                     title = "About",

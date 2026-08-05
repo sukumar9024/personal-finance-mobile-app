@@ -67,6 +67,7 @@ import com.financetracker.ui.theme.CardElevation
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Store
 import com.financetracker.ui.theme.CategoryColors
+import com.financetracker.data.model.Currency
 import com.financetracker.ui.theme.IconCircle
 import com.financetracker.ui.theme.ScreenPadding
 import com.financetracker.ui.theme.SectionHeader
@@ -102,6 +103,12 @@ private data class SpendingSlice(
     val color: Color
 )
 
+private data class CurrencyReportSummary(
+    val currency: Currency,
+    val amount: Double,
+    val transactionCount: Int
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportsScreen(
@@ -124,8 +131,18 @@ fun ReportsScreen(
     val categoryOptions = listOf("All categories") + categories.map { it.name }
     if (selectedCategory !in categoryOptions) selectedCategory = "All categories"
 
+    val reportExpenses = if (uiState.includeTransfersInReports) {
+        uiState.reportExpenses
+    } else {
+        uiState.reportExpenses.filterNot { it.isTransfer }
+    }
+    val currentMonthExpenses = if (uiState.includeTransfersInReports) {
+        uiState.expenses
+    } else {
+        uiState.expenses.filterNot { it.isTransfer }
+    }
     val scopedExpenses = filterExpensesForTimeline(
-        expenses = uiState.reportExpenses,
+        expenses = reportExpenses,
         timeline = selectedTimeline,
         currentPeriod = currentPeriod
     )
@@ -134,23 +151,28 @@ fun ReportsScreen(
     } else {
         scopedExpenses.filter { it.category == selectedCategory }
     }
+    val primaryFilteredExpenses = filteredExpenses.filter { Currency.fromCode(it.currencyCode) == uiState.currency }
+    val currencyReportSummaries = filteredExpenses
+        .groupBy { Currency.fromCode(it.currencyCode) }
+        .map { (currency, entries) -> CurrencyReportSummary(currency, entries.sumOf { it.amount }, entries.size) }
+        .sortedByDescending { it.amount }
 
     val trendPoints = buildTrendPoints(
         timeline = selectedTimeline,
-        expenses = filteredExpenses,
+        expenses = primaryFilteredExpenses,
         incomeEntries = uiState.incomeEntries,
         currentPeriod = currentPeriod,
         currentMonthlyIncome = uiState.monthlyIncome
     )
-    val categoryTotals = filteredExpenses
+    val categoryTotals = primaryFilteredExpenses
         .groupBy { it.category }
         .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
         .toList()
         .sortedByDescending { it.second }
     val totalIncome = trendPoints.sumOf { it.income }
-    val totalSpending = filteredExpenses.sumOf { it.amount }
+    val totalSpending = primaryFilteredExpenses.sumOf { it.amount }
     val remainingAmount = totalIncome - totalSpending
-    val averageExpense = if (filteredExpenses.isNotEmpty()) totalSpending / filteredExpenses.size else 0.0
+    val averageExpense = if (primaryFilteredExpenses.isNotEmpty()) totalSpending / primaryFilteredExpenses.size else 0.0
     val spendingSlices = buildSpendingSlices(categoryTotals, categories, totalIncome, remainingAmount)
     val monthComparison = buildMonthComparison(uiState.reportExpenses, uiState.incomeEntries, currentPeriod)
     val incomeHistory = uiState.incomeEntries.sortedByDescending { it.period }.take(12)
@@ -182,6 +204,8 @@ fun ReportsScreen(
                 spendingSlices = spendingSlices
             )
 
+            MultiCurrencyReportCard(currencyReportSummaries)
+
             BudgetTrendCard(
                 selectedTimeline = selectedTimeline,
                 onTimelineSelected = { selectedTimeline = it },
@@ -199,9 +223,10 @@ fun ReportsScreen(
 
             BudgetVsActualCard(
                 categories = categories,
-                expenses = uiState.expenses,
+                expenses = currentMonthExpenses,
                 monthlyIncome = uiState.monthlyIncome,
-                categoryBudgets = uiState.categoryBudgets
+                categoryBudgets = uiState.categoryBudgets,
+                currentPeriod = currentPeriod
             )
 
             MonthComparisonCard(
@@ -406,6 +431,42 @@ private fun IncomeVsSpendingCard(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun MultiCurrencyReportCard(
+    summaries: List<CurrencyReportSummary>
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(
+                title = "Currency Totals",
+                subtitle = "Spending is grouped by the currency used on each transaction"
+            )
+            if (summaries.isEmpty()) {
+                Text("No spending found for the selected report filters.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                summaries.forEach { summary ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(summary.currency.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text("${summary.transactionCount} transactions", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(formatCurrency(summary.amount, summary.currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
     }
 }
@@ -785,11 +846,12 @@ private fun BudgetVsActualCard(
     categories: List<Category>,
     expenses: List<Expense>,
     monthlyIncome: Double,
-    categoryBudgets: List<com.financetracker.data.model.CategoryBudget> = emptyList()
+    categoryBudgets: List<com.financetracker.data.model.CategoryBudget> = emptyList(),
+    currentPeriod: YearMonth
 ) {
-    val currentPeriod = YearMonth.now().toString()
+    val currentPeriodText = currentPeriod.toString()
     val budgetsByCategory = categoryBudgets
-        .filter { it.period == currentPeriod }
+        .filter { it.period == currentPeriodText }
         .associateBy { it.category }
     val spendByCategory = expenses.groupBy { it.category }.mapValues { (_, entries) -> entries.sumOf { it.amount } }
     val trackedCategories = categories.filter { 

@@ -17,6 +17,7 @@ data class Expense(
     val splitGroupId: String? = null,
     val receiptUrl: String? = null,
     val tags: List<String> = emptyList(),
+    val currencyCode: String = Currency.getDefault().code,
     val createdAt: LocalDateTime = LocalDateTime.now(),
     val modifiedAt: LocalDateTime = LocalDateTime.now(),
     val recurringEntryId: String? = null,

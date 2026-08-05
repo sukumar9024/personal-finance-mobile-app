@@ -3,6 +3,7 @@ package com.financetracker.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.financetracker.data.model.AccountBalance
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.CategoryBudget
 import com.financetracker.data.model.Expense
@@ -67,20 +68,27 @@ data class FinanceTrackerUiState(
     val pendingUndoDelete: PendingUndoDelete? = null,
     val overspendingAlert: OverspendingAlert? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val currency: Currency = Currency.getDefault()
+    val currency: Currency = Currency.getDefault(),
+    val includeTransfersInReports: Boolean = false,
+    val accountBalances: List<AccountBalance> = emptyList(),
+    val userMessage: String? = null
 )
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GoogleSheetsRepository(application)
     private val savedThemeMode = repository.loadThemeMode()
     private val savedCurrency = repository.loadCurrency()
+    private val savedIncludeTransfersInReports = repository.loadIncludeTransfersInReports()
+    private val savedAccountBalances = repository.loadAccountBalances()
 
     private val _uiState = MutableStateFlow(
         FinanceTrackerUiState(
             currentMonthSheet = repository.getCurrentMonthSheetName(),
             syncStatus = buildSyncStatus(isUsingCachedData = false),
             themeMode = savedThemeMode,
-            currency = savedCurrency
+            currency = savedCurrency,
+            includeTransfersInReports = savedIncludeTransfersInReports,
+            accountBalances = savedAccountBalances
         )
     )
     val uiState: StateFlow<FinanceTrackerUiState> = _uiState.asStateFlow()
@@ -308,6 +316,68 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         repository.saveCurrency(currency)
         setPreferredCurrency(currency)
         updateLocalState(_uiState.value.copy(currency = currency))
+    }
+
+    fun setIncludeTransfersInReports(includeTransfers: Boolean) {
+        repository.saveIncludeTransfersInReports(includeTransfers)
+        updateLocalState(_uiState.value.copy(includeTransfersInReports = includeTransfers))
+    }
+
+    fun addOrUpdateAccountBalance(name: String, amount: Double, isDebt: Boolean) {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return
+        val updatedBalances = _uiState.value.accountBalances
+            .filterNot { it.name.equals(normalizedName, ignoreCase = true) } +
+            AccountBalance(normalizedName, amount, isDebt)
+        repository.saveAccountBalances(updatedBalances.sortedBy { it.name.lowercase(Locale.getDefault()) })
+        updateLocalState(_uiState.value.copy(accountBalances = repository.loadAccountBalances()))
+    }
+
+    fun removeAccountBalance(name: String) {
+        val updatedBalances = _uiState.value.accountBalances
+            .filterNot { it.name.equals(name, ignoreCase = true) }
+        repository.saveAccountBalances(updatedBalances)
+        updateLocalState(_uiState.value.copy(accountBalances = updatedBalances))
+    }
+
+    fun exportData() {
+        runCatching {
+            val expenses = _uiState.value.reportExpenses.ifEmpty { _uiState.value.expenses }
+            val incomeEntries = _uiState.value.incomeEntries
+            val csvPath = repository.exportTransactionsCsv(expenses, incomeEntries)
+            val pdfPath = repository.exportSummaryPdf(expenses, incomeEntries)
+            "$csvPath and $pdfPath"
+        }.onSuccess { path ->
+            updateLocalState(_uiState.value.copy(userMessage = "Export saved: $path"))
+        }.onFailure { error ->
+            updateLocalState(_uiState.value.copy(userMessage = error.message ?: "Failed to export data."))
+        }
+    }
+
+    fun backupData() {
+        runCatching { repository.backupCacheToFile() }
+            .onSuccess { path -> updateLocalState(_uiState.value.copy(userMessage = "Backup saved: $path")) }
+            .onFailure { error -> updateLocalState(_uiState.value.copy(userMessage = error.message ?: "Failed to back up data.")) }
+    }
+
+    fun restoreLatestBackup() {
+        if (repository.restoreLatestBackup()) {
+            hydrateFromCache()
+            updateLocalState(
+                _uiState.value.copy(
+                    accountBalances = repository.loadAccountBalances(),
+                    includeTransfersInReports = repository.loadIncludeTransfersInReports(),
+                    userMessage = "Latest backup restored."
+                )
+            )
+        } else {
+            updateLocalState(_uiState.value.copy(userMessage = "No backup file found."))
+        }
+    }
+
+    fun consumeUserMessage() {
+        if (_uiState.value.userMessage == null) return
+        updateLocalState(_uiState.value.copy(userMessage = null))
     }
 
     fun setMonthlyIncome(amount: Double) {
@@ -984,6 +1054,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         paymentMethod: String,
         description: String,
         tags: List<String>,
+        currencyCode: String,
         splitRows: List<SplitExpenseInput>
     ): List<Expense> {
         val splitGroupId = UUID.randomUUID().toString()
@@ -993,6 +1064,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 id = UUID.randomUUID().toString(),
                 date = date,
                 amount = amount,
+                currencyCode = Currency.fromCode(currencyCode).code,
                 category = row.category,
                 subcategory = row.subcategory?.takeIf { it.isNotBlank() },
                 description = description,
