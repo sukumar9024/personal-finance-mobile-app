@@ -1,6 +1,8 @@
 package com.financetracker.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,7 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AttachMoney
@@ -24,6 +27,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -34,9 +39,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -44,10 +51,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.financetracker.ui.theme.ScreenPadding
@@ -56,6 +66,7 @@ import com.financetracker.ui.theme.Spacing
 import com.financetracker.ui.theme.ThemeMode
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 import com.financetracker.data.model.Currency
+import com.financetracker.data.model.CsvImportMapping
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,7 +75,18 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     val showInfoDialog = remember { mutableStateOf(false) }
+    var showCsvImportDialog by remember { mutableStateOf(false) }
+    var csvText by remember { mutableStateOf("") }
+    var csvMapping by remember(uiState.csvImportMapping) { mutableStateOf(uiState.csvImportMapping) }
+    val csvPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        csvText = runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
+        }.getOrDefault("")
+        showCsvImportDialog = true
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -259,6 +281,79 @@ item {
     }
 }
 
+item {
+    SettingsSection(
+        title = "Security & Conversion",
+        subtitle = "Protect the app and choose optional currency conversion"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            SettingsSwitchRow(
+                title = "Biometric lock",
+                subtitle = "Works on debug installs when biometrics or device PIN is enrolled.",
+                checked = uiState.biometricLockEnabled,
+                onCheckedChange = viewModel::setBiometricLockEnabled
+            )
+            SettingsSwitchRow(
+                title = "Exchange conversion",
+                subtitle = "Show converted spending totals using your manual rates.",
+                checked = uiState.exchangeConversionEnabled,
+                onCheckedChange = viewModel::setExchangeConversionEnabled
+            )
+        }
+    }
+}
+
+item {
+    SettingsSection(
+        title = "Dashboard Layout",
+        subtitle = "Show or hide dashboard cards you use most"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            uiState.dashboardCardPreferences.sortedBy { it.sortOrder }.forEachIndexed { index, preference ->
+                DashboardCardPreferenceRow(
+                    title = preference.title,
+                    group = preference.group,
+                    visible = preference.visible,
+                    collapsed = preference.collapsed,
+                    canMoveUp = index > 0,
+                    canMoveDown = index < uiState.dashboardCardPreferences.lastIndex,
+                    onVisibleChange = { viewModel.setDashboardCardVisibility(preference.id, it) },
+                    onMoveUp = { viewModel.moveDashboardCard(preference.id, -1) },
+                    onMoveDown = { viewModel.moveDashboardCard(preference.id, 1) }
+                )
+            }
+        }
+    }
+}
+
+item {
+    SettingsSection(
+        title = "Data Tools",
+        subtitle = "Import, validate, and diagnose finance data"
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            OutlinedButton(
+                onClick = { csvPickerLauncher.launch("text/*") },
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.medium
+            ) {
+                Text("Import CSV Statement")
+            }
+            ValidationSummaryCard(
+                title = "Data Validation",
+                rows = viewModel.buildDataValidationIssues().map { "${it.severity}: ${it.title} - ${it.detail}" }
+                    .ifEmpty { listOf("No data quality issues found.") }
+            )
+            ValidationSummaryCard(
+                title = "Google Sheets Setup Validator",
+                rows = viewModel.buildSetupChecks().map {
+                    "${if (it.passed) "Passed" else "Needs attention"}: ${it.title} - ${it.detail}"
+                }
+            )
+        }
+    }
+}
+
             item {
                 SettingsSection(
                     title = "About",
@@ -328,6 +423,25 @@ item {
                 }
             }
         }
+    }
+
+    if (showCsvImportDialog) {
+        CsvImportDialog(
+            csvText = csvText,
+            mapping = csvMapping,
+            onMappingChange = { csvMapping = it },
+            onImport = {
+                viewModel.importCsvText(
+                    csvText = csvText,
+                    mapping = csvMapping,
+                    defaultCategory = uiState.categoryState.categories.firstOrNull()?.name ?: "Other",
+                    defaultAccount = "Bank",
+                    defaultCurrency = uiState.currency
+                )
+                showCsvImportDialog = false
+            },
+            onDismiss = { showCsvImportDialog = false }
+        )
     }
 
     if (showInfoDialog.value) {
@@ -432,6 +546,178 @@ private fun ThemeOption(
             )
         }
     }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.md),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange
+            )
+        }
+    }
+}
+
+@Composable
+private fun DashboardCardPreferenceRow(
+    title: String,
+    group: String,
+    visible: Boolean,
+    collapsed: Boolean,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onVisibleChange: (Boolean) -> Unit,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit
+) {
+    var dragAmount by remember { mutableStateOf(0f) }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(canMoveUp, canMoveDown) {
+                detectVerticalDragGestures(
+                    onDragEnd = { dragAmount = 0f },
+                    onVerticalDrag = { _, dragDelta ->
+                        dragAmount += dragDelta
+                        when {
+                            dragAmount < -36f && canMoveUp -> {
+                                onMoveUp()
+                                dragAmount = 0f
+                            }
+                            dragAmount > 36f && canMoveDown -> {
+                                onMoveDown()
+                                dragAmount = 0f
+                            }
+                        }
+                    }
+                )
+            },
+        shape = Shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.md),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+                Text(
+                    text = "$group • ${if (visible) if (collapsed) "visible, collapsed" else "visible" else "hidden"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move $title up")
+            }
+            IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move $title down")
+            }
+            androidx.compose.material3.Switch(
+                checked = visible,
+                onCheckedChange = onVisibleChange
+            )
+        }
+    }
+}
+
+@Composable
+private fun ValidationSummaryCard(
+    title: String,
+    rows: List<String>
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.md), verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            rows.take(8).forEach { row ->
+                Text(row, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CsvImportDialog(
+    csvText: String,
+    mapping: CsvImportMapping,
+    onMappingChange: (CsvImportMapping) -> Unit,
+    onImport: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import CSV Statement") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text(
+                    text = if (csvText.isBlank()) "No CSV text loaded." else "CSV loaded. Confirm the column names used by your statement.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                MappingField("Date column", mapping.dateColumn) { onMappingChange(mapping.copy(dateColumn = it)) }
+                MappingField("Amount column", mapping.amountColumn) { onMappingChange(mapping.copy(amountColumn = it)) }
+                MappingField("Description column", mapping.descriptionColumn) { onMappingChange(mapping.copy(descriptionColumn = it)) }
+                MappingField("Category column", mapping.categoryColumn) { onMappingChange(mapping.copy(categoryColumn = it)) }
+                MappingField("Account column", mapping.accountColumn) { onMappingChange(mapping.copy(accountColumn = it)) }
+                MappingField("Currency column", mapping.currencyColumn) { onMappingChange(mapping.copy(currencyColumn = it)) }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onImport, enabled = csvText.isNotBlank()) {
+                Text("Import")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun MappingField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.medium
+    )
 }
 
 @Composable

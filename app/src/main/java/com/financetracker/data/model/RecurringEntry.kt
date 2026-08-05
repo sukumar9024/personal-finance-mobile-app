@@ -15,5 +15,7 @@ data class RecurringEntry(
     val description: String = "",
     val paymentMethod: String = "Cash",
     val active: Boolean = true,
+    val reminderEnabled: Boolean = false,
+    val reminderDaysBefore: Int = 1,
     val sheetRowIndex: Int = -1
 )

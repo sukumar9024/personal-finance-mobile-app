@@ -16,8 +16,10 @@ The app is designed around month-by-month finance tracking. Each month can have 
 - Best savings month, worst savings month, and count of months where spending exceeded income.
 - Recent monthly savings history.
 - Daily burn rate, projected month-end spending, and safe-to-spend per day.
+- Spending calendar for the selected month.
 - Payment account spending summary.
 - Upcoming recurring income and expenses.
+- Savings goals with progress tracking.
 - Manual net-worth tracker for assets and debts.
 - Quick-add expense entry.
 - Top categories for the selected month.
@@ -33,6 +35,7 @@ The app is designed around month-by-month finance tracking. Each month can have 
 - Edit or delete transactions.
 - Tags, descriptions, subcategories, payment methods, and transfer accounts.
 - Transaction-level currency selection.
+- Transaction templates for frequently used expenses.
 - Transactions are stored in monthly sheets named `expenses_YYYY_MM`.
 
 ### Monthly Income And Savings
@@ -62,6 +65,7 @@ The app is designed around month-by-month finance tracking. Each month can have 
 - Top merchants.
 - Currency totals grouped by transaction currency.
 - Recurring plans with active/inactive toggles.
+- Recurring entry edit and delete.
 - Optional include/exclude transfers setting.
 
 ### Settings And Data
@@ -70,6 +74,8 @@ The app is designed around month-by-month finance tracking. Each month can have 
 - Multi-currency selection.
 - Per-transaction currency support. The Settings currency is the default display/input currency, while each expense can be saved in its own currency.
 - Include/exclude transfers in reports.
+- Optional manual exchange-rate conversion into the preferred currency.
+- Biometric lock with device credential fallback.
 - CSV export.
 - PDF summary export.
 - Local backup.
@@ -93,11 +99,35 @@ The app is designed around month-by-month finance tracking. Each month can have 
 4. Tap `+` to add expenses, transfers, or split transactions.
 5. Select the transaction currency when the expense is not in your default currency.
 6. Use **Quick Add** for simple expenses, including currency selection.
-7. Open **Categories** to set category budgets for the selected month.
-8. Open **Reports** to review trends, currency totals, income history, recurring plans, and forecasts.
-9. Use **Export** to generate CSV and PDF files.
-10. Use **Backup** before risky changes and **Restore Latest Backup** if needed.
-11. Use **Clear Day**, **Clear Month**, or **Clear All Transactions** only after checking the confirmation count.
+7. Save common expenses as templates from the Add Transaction screen.
+8. Open **Categories** to set category budgets for the selected month.
+9. Open **Reports** to review trends, currency totals, income history, recurring plans, and forecasts.
+10. Edit or delete recurring plans from the Reports screen.
+11. Add savings goals and net-worth balances from the dashboard.
+12. Use **Export** to generate CSV and PDF files.
+13. Use **Backup** before risky changes and **Restore Latest Backup** if needed.
+14. Use **Clear Day**, **Clear Month**, or **Clear All Transactions** only after checking the confirmation count.
+
+## Biometric Lock
+
+Biometric lock works when the app is installed through Android Studio, Gradle, or USB debugging. It depends on the phone, not on Play Store distribution.
+
+Requirements:
+
+- The phone supports fingerprint, face unlock, or device credential authentication.
+- A fingerprint, face, PIN, pattern, or password is enrolled.
+- **Biometric lock** is enabled in Settings.
+
+If the device has no enrolled biometric or device credential, the app automatically disables the lock instead of blocking access.
+
+## Exchange Conversion
+
+The app never overwrites original transaction currency values. When exchange conversion is enabled:
+
+- Each transaction still keeps its original currency.
+- Dashboard and reports continue to show spending grouped by original currency.
+- A converted spending total is shown in the preferred currency using manual rates entered in the dashboard.
+- Missing rates are treated as incomplete conversion, so the app asks you to add rates.
 
 ## Tech Stack
 

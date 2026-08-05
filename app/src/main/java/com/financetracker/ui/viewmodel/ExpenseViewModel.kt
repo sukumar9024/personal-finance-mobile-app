@@ -6,10 +6,20 @@ import androidx.lifecycle.viewModelScope
 import com.financetracker.data.model.AccountBalance
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.CategoryBudget
+import com.financetracker.data.model.CategoryRolloverSetting
+import com.financetracker.data.model.CsvImportMapping
 import com.financetracker.data.model.Expense
+import com.financetracker.data.model.DashboardCardPreference
+import com.financetracker.data.model.DebtAccount
 import com.financetracker.data.model.IncomeEntry
+import com.financetracker.data.model.InvestmentHolding
+import com.financetracker.data.model.MonthlyCloseNote
 import com.financetracker.data.model.RecurringEntry
+import com.financetracker.data.model.RecurringReminderOccurrence
+import com.financetracker.data.model.RecurringReminderStatus
 import com.financetracker.data.model.RecurringType
+import com.financetracker.data.model.SavingsGoal
+import com.financetracker.data.model.TransactionTemplate
 import com.financetracker.data.model.isTransfer
 import com.financetracker.data.model.spendingTotal
 import com.financetracker.data.repository.GoogleSheetsRepository
@@ -52,6 +62,18 @@ data class OverspendingAlert(
     val token: Long = System.currentTimeMillis()
 )
 
+data class ValidationIssue(
+    val title: String,
+    val detail: String,
+    val severity: String
+)
+
+data class SetupCheck(
+    val title: String,
+    val detail: String,
+    val passed: Boolean
+)
+
 data class FinanceTrackerUiState(
     val expenses: List<Expense> = emptyList(),
     val reportExpenses: List<Expense> = emptyList(),
@@ -71,6 +93,18 @@ data class FinanceTrackerUiState(
     val currency: Currency = Currency.getDefault(),
     val includeTransfersInReports: Boolean = false,
     val accountBalances: List<AccountBalance> = emptyList(),
+    val transactionTemplates: List<TransactionTemplate> = emptyList(),
+    val savingsGoals: List<SavingsGoal> = emptyList(),
+    val exchangeRates: Map<String, Double> = emptyMap(),
+    val exchangeConversionEnabled: Boolean = false,
+    val biometricLockEnabled: Boolean = false,
+    val dashboardCardPreferences: List<DashboardCardPreference> = emptyList(),
+    val categoryRolloverSettings: List<CategoryRolloverSetting> = emptyList(),
+    val monthlyCloseNotes: List<MonthlyCloseNote> = emptyList(),
+    val csvImportMapping: CsvImportMapping = CsvImportMapping(name = "Default"),
+    val debtAccounts: List<DebtAccount> = emptyList(),
+    val investmentHoldings: List<InvestmentHolding> = emptyList(),
+    val recurringReminderOccurrences: List<RecurringReminderOccurrence> = emptyList(),
     val userMessage: String? = null
 )
 
@@ -80,6 +114,18 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     private val savedCurrency = repository.loadCurrency()
     private val savedIncludeTransfersInReports = repository.loadIncludeTransfersInReports()
     private val savedAccountBalances = repository.loadAccountBalances()
+    private val savedTransactionTemplates = repository.loadTransactionTemplates()
+    private val savedSavingsGoals = repository.loadSavingsGoals()
+    private val savedExchangeRates = repository.loadExchangeRates()
+    private val savedExchangeConversionEnabled = repository.loadExchangeConversionEnabled()
+    private val savedBiometricLockEnabled = repository.loadBiometricLockEnabled()
+    private val savedDashboardCardPreferences = repository.loadDashboardCardPreferences()
+    private val savedCategoryRolloverSettings = repository.loadCategoryRolloverSettings()
+    private val savedMonthlyCloseNotes = repository.loadMonthlyCloseNotes()
+    private val savedCsvImportMapping = repository.loadCsvImportMapping()
+    private val savedDebtAccounts = repository.loadDebtAccounts()
+    private val savedInvestmentHoldings = repository.loadInvestmentHoldings()
+    private val savedRecurringReminderOccurrences = repository.loadRecurringReminderOccurrences()
 
     private val _uiState = MutableStateFlow(
         FinanceTrackerUiState(
@@ -88,7 +134,19 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             themeMode = savedThemeMode,
             currency = savedCurrency,
             includeTransfersInReports = savedIncludeTransfersInReports,
-            accountBalances = savedAccountBalances
+            accountBalances = savedAccountBalances,
+            transactionTemplates = savedTransactionTemplates,
+            savingsGoals = savedSavingsGoals,
+            exchangeRates = savedExchangeRates,
+            exchangeConversionEnabled = savedExchangeConversionEnabled,
+            biometricLockEnabled = savedBiometricLockEnabled,
+            dashboardCardPreferences = savedDashboardCardPreferences,
+            categoryRolloverSettings = savedCategoryRolloverSettings,
+            monthlyCloseNotes = savedMonthlyCloseNotes,
+            csvImportMapping = savedCsvImportMapping,
+            debtAccounts = savedDebtAccounts,
+            investmentHoldings = savedInvestmentHoldings,
+            recurringReminderOccurrences = savedRecurringReminderOccurrences
         )
     )
     val uiState: StateFlow<FinanceTrackerUiState> = _uiState.asStateFlow()
@@ -323,6 +381,383 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         updateLocalState(_uiState.value.copy(includeTransfersInReports = includeTransfers))
     }
 
+    fun setBiometricLockEnabled(enabled: Boolean) {
+        repository.saveBiometricLockEnabled(enabled)
+        updateLocalState(_uiState.value.copy(biometricLockEnabled = enabled))
+    }
+
+    fun setExchangeConversionEnabled(enabled: Boolean) {
+        repository.saveExchangeConversionEnabled(enabled)
+        updateLocalState(_uiState.value.copy(exchangeConversionEnabled = enabled))
+    }
+
+    fun setExchangeRate(currency: Currency, rateToPreferred: Double) {
+        if (rateToPreferred <= 0.0) return
+        val updatedRates = _uiState.value.exchangeRates + (currency.code to rateToPreferred)
+        repository.saveExchangeRates(updatedRates)
+        updateLocalState(_uiState.value.copy(exchangeRates = updatedRates))
+    }
+
+    fun setDashboardCardVisibility(cardId: String, visible: Boolean) {
+        updateDashboardPreference(cardId) { it.copy(visible = visible) }
+    }
+
+    fun toggleDashboardCardCollapsed(cardId: String) {
+        updateDashboardPreference(cardId) { it.copy(collapsed = !it.collapsed) }
+    }
+
+    fun moveDashboardCard(cardId: String, direction: Int) {
+        if (direction == 0) return
+        val preferences = _uiState.value.dashboardCardPreferences.ifEmpty {
+            repository.defaultDashboardCardPreferences()
+        }.sortedBy { it.sortOrder }.toMutableList()
+        val index = preferences.indexOfFirst { it.id == cardId }
+        val targetIndex = (index + direction).coerceIn(0, preferences.lastIndex)
+        if (index < 0 || index == targetIndex) return
+        val moved = preferences.removeAt(index)
+        preferences.add(targetIndex, moved)
+        val reordered = preferences.mapIndexed { order, preference -> preference.copy(sortOrder = order) }
+        repository.saveDashboardCardPreferences(reordered)
+        updateLocalState(_uiState.value.copy(dashboardCardPreferences = repository.loadDashboardCardPreferences()))
+    }
+
+    fun setCategoryRollover(category: String, enabled: Boolean, carryOverspend: Boolean = true) {
+        val normalizedCategory = category.trim()
+        if (normalizedCategory.isBlank()) return
+        val settings = (_uiState.value.categoryRolloverSettings.filterNot {
+            it.category.equals(normalizedCategory, ignoreCase = true)
+        } + CategoryRolloverSetting(normalizedCategory, enabled, carryOverspend))
+            .sortedBy { it.category.lowercase(Locale.getDefault()) }
+        repository.saveCategoryRolloverSettings(settings)
+        updateLocalState(_uiState.value.copy(categoryRolloverSettings = settings))
+    }
+
+    fun saveMonthlyCloseNote(period: String, notes: String) {
+        val normalizedPeriod = runCatching { YearMonth.parse(period.trim()).toString() }.getOrDefault(period.trim())
+        val note = MonthlyCloseNote(normalizedPeriod, notes.trim())
+        repository.saveMonthlyCloseNote(note)
+        updateLocalState(_uiState.value.copy(monthlyCloseNotes = repository.loadMonthlyCloseNotes()))
+    }
+
+    fun saveCsvImportMapping(mapping: CsvImportMapping) {
+        repository.saveCsvImportMapping(mapping)
+        updateLocalState(_uiState.value.copy(csvImportMapping = repository.loadCsvImportMapping()))
+    }
+
+    fun importCsvText(
+        csvText: String,
+        mapping: CsvImportMapping,
+        defaultCategory: String,
+        defaultAccount: String,
+        defaultCurrency: Currency
+    ) {
+        val parsedExpenses = repository.parseCsvExpenses(
+            csvText = csvText,
+            mapping = mapping,
+            defaultCategory = defaultCategory,
+            defaultAccount = defaultAccount,
+            defaultCurrency = defaultCurrency
+        )
+        val existing = _uiState.value.reportExpenses.ifEmpty { _uiState.value.expenses }
+        val importableExpenses = parsedExpenses.filterNot { candidate ->
+            existing.any { existingExpense ->
+                existingExpense.date == candidate.date &&
+                    existingExpense.category.equals(candidate.category, ignoreCase = true) &&
+                    Currency.fromCode(existingExpense.currencyCode) == Currency.fromCode(candidate.currencyCode) &&
+                    kotlin.math.abs(existingExpense.amount - candidate.amount) < 0.001 &&
+                    existingExpense.description.equals(candidate.description, ignoreCase = true)
+            }
+        }
+
+        saveCsvImportMapping(mapping)
+        if (importableExpenses.isEmpty()) {
+            updateLocalState(_uiState.value.copy(userMessage = "No new CSV transactions found."))
+            return
+        }
+        addExpenseGroup(importableExpenses.map { it.copy(id = UUID.randomUUID().toString()) })
+        updateLocalState(_uiState.value.copy(userMessage = "Imported ${importableExpenses.size} CSV transactions."))
+    }
+
+    fun bulkDeleteTransactions(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        val state = _uiState.value
+        val targets = (state.reportExpenses.ifEmpty { state.expenses }).filter { it.id in ids }
+        if (targets.isEmpty()) return
+
+        if (!repository.isReadyForLiveSync()) {
+            val newExpenses = state.expenses.filterNot { it.id in ids }
+            val newReportExpenses = state.reportExpenses.filterNot { it.id in ids }
+            updateLocalState(
+                state.copy(
+                    expenses = newExpenses,
+                    reportExpenses = newReportExpenses,
+                    totalAmount = newExpenses.spendingTotal(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true),
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    userMessage = "Deleted ${targets.size} transactions."
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                targets.forEach { repository.deleteExpense(sheetNameForExpense(it), it.id) }
+            }.onSuccess {
+                refreshAllData()
+                updateLocalState(_uiState.value.copy(userMessage = "Deleted ${targets.size} transactions."))
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to delete selected transactions.")
+            }
+        }
+    }
+
+    fun bulkUpdateTransactions(
+        ids: Set<String>,
+        category: String? = null,
+        paymentMethod: String? = null,
+        tags: List<String>? = null
+    ) {
+        if (ids.isEmpty()) return
+        val state = _uiState.value
+        val updatedReportExpenses = state.reportExpenses.ifEmpty { state.expenses }.map { expense ->
+            if (expense.id !in ids) {
+                expense
+            } else {
+                expense.copy(
+                    category = category?.takeIf { it.isNotBlank() } ?: expense.category,
+                    paymentMethod = paymentMethod?.takeIf { it.isNotBlank() } ?: expense.paymentMethod,
+                    tags = tags ?: expense.tags
+                )
+            }
+        }
+        val updatedSelectedExpenses = updatedReportExpenses.filter {
+            YearMonth.from(it.date).toString() == periodFromSheet(currentSheetName())
+        }
+
+        if (!repository.isReadyForLiveSync()) {
+            updateLocalState(
+                state.copy(
+                    expenses = updatedSelectedExpenses.sortedByDescending { it.date },
+                    reportExpenses = updatedReportExpenses.sortedByDescending { it.date },
+                    totalAmount = updatedSelectedExpenses.spendingTotal(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true),
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    userMessage = "Updated ${ids.size} selected transactions."
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                updatedReportExpenses.filter { it.id in ids }.forEach { expense ->
+                    repository.updateExpense(sheetNameForExpense(expense), expense)
+                }
+            }.onSuccess {
+                refreshAllData()
+                updateLocalState(_uiState.value.copy(userMessage = "Updated ${ids.size} selected transactions."))
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to update selected transactions.")
+            }
+        }
+    }
+
+    fun updateRecurringReminder(entry: RecurringEntry, enabled: Boolean, daysBefore: Int) {
+        updateRecurringEntry(
+            entry.copy(
+                reminderEnabled = enabled,
+                reminderDaysBefore = daysBefore.coerceIn(0, 14)
+            )
+        )
+    }
+
+    fun markRecurringOccurrenceSkipped(entry: RecurringEntry, period: String) {
+        val normalizedPeriod = runCatching { YearMonth.parse(period).toString() }.getOrDefault(period)
+        repository.markRecurringOccurrenceSkipped(entry.id, normalizedPeriod)
+        updateLocalState(
+            _uiState.value.copy(
+                recurringReminderOccurrences = repository.loadRecurringReminderOccurrences(),
+                userMessage = "${entry.title} skipped for $normalizedPeriod."
+            )
+        )
+    }
+
+    fun markRecurringOccurrencePaid(entry: RecurringEntry, period: String) {
+        val normalizedPeriod = runCatching { YearMonth.parse(period).toString() }.getOrDefault(period)
+        viewModelScope.launch {
+            runCatching {
+                repository.markRecurringOccurrencePaid(entry.id, normalizedPeriod)
+            }.onSuccess {
+                hydrateFromCache()
+                updateLocalState(
+                    _uiState.value.copy(
+                        recurringReminderOccurrences = repository.loadRecurringReminderOccurrences(),
+                        userMessage = "${entry.title} marked paid for $normalizedPeriod."
+                    )
+                )
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to mark recurring item as paid.")
+            }
+        }
+    }
+
+    fun applyGoalAutoContribution(totalSavings: Double) {
+        if (totalSavings <= 0.0 || _uiState.value.savingsGoals.isEmpty()) return
+        var remainingSavings = totalSavings
+        val updatedGoals = _uiState.value.savingsGoals.map { goal ->
+            if (remainingSavings <= 0.0) {
+                goal
+            } else {
+                val missing = (goal.targetAmount - goal.currentAmount).coerceAtLeast(0.0)
+                val allocation = missing.coerceAtMost(remainingSavings)
+                remainingSavings -= allocation
+                goal.copy(currentAmount = goal.currentAmount + allocation)
+            }
+        }
+        repository.saveSavingsGoals(updatedGoals)
+        updateLocalState(_uiState.value.copy(savingsGoals = updatedGoals, userMessage = "Savings allocated to goals."))
+    }
+
+    fun addOrUpdateDebtAccount(debt: DebtAccount) {
+        val normalized = debt.copy(
+            id = debt.id.ifBlank { UUID.randomUUID().toString() },
+            name = debt.name.trim(),
+            dueDay = debt.dueDay.coerceIn(1, 31),
+            currencyCode = Currency.fromCode(debt.currencyCode).code
+        )
+        if (normalized.name.isBlank() || normalized.currentBalance < 0.0) return
+        val debts = (_uiState.value.debtAccounts.filterNot { it.id == normalized.id } + normalized)
+            .sortedBy { it.dueDay }
+        repository.saveDebtAccounts(debts)
+        updateLocalState(_uiState.value.copy(debtAccounts = debts))
+    }
+
+    fun deleteDebtAccount(id: String) {
+        val debts = _uiState.value.debtAccounts.filterNot { it.id == id }
+        repository.saveDebtAccounts(debts)
+        updateLocalState(_uiState.value.copy(debtAccounts = debts))
+    }
+
+    fun addOrUpdateInvestmentHolding(holding: InvestmentHolding) {
+        val normalized = holding.copy(
+            id = holding.id.ifBlank { UUID.randomUUID().toString() },
+            name = holding.name.trim(),
+            assetType = holding.assetType.ifBlank { "Other" },
+            currencyCode = Currency.fromCode(holding.currencyCode).code
+        )
+        if (normalized.name.isBlank()) return
+        val holdings = (_uiState.value.investmentHoldings.filterNot { it.id == normalized.id } + normalized)
+            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        repository.saveInvestmentHoldings(holdings)
+        updateLocalState(_uiState.value.copy(investmentHoldings = holdings))
+    }
+
+    fun deleteInvestmentHolding(id: String) {
+        val holdings = _uiState.value.investmentHoldings.filterNot { it.id == id }
+        repository.saveInvestmentHoldings(holdings)
+        updateLocalState(_uiState.value.copy(investmentHoldings = holdings))
+    }
+
+    fun buildDataValidationIssues(): List<ValidationIssue> {
+        val state = _uiState.value
+        val allExpenses = state.reportExpenses.ifEmpty { state.expenses }
+        val incomePeriods = state.incomeEntries.map { it.period }.toSet()
+        val expensePeriods = allExpenses.map { YearMonth.from(it.date).toString() }.toSet()
+        val categoryNames = state.categoryState.categories.map { it.name.lowercase(Locale.getDefault()) }.toSet()
+        val issues = mutableListOf<ValidationIssue>()
+
+        (expensePeriods - incomePeriods).sortedDescending().forEach { period ->
+            issues += ValidationIssue("Missing income", "$period has expenses but no monthly income entry.", "Warning")
+        }
+        allExpenses.filter { it.category.isBlank() }.forEach {
+            issues += ValidationIssue("Missing category", "${it.date} ${it.description.ifBlank { it.amount.toString() }} has no category.", "Error")
+        }
+        allExpenses.filter { it.currencyCode.isBlank() }.forEach {
+            issues += ValidationIssue("Missing currency", "${it.date} ${it.category} has no currency.", "Error")
+        }
+        allExpenses.groupBy {
+            "${it.date}|${it.amount}|${it.currencyCode}|${it.category.lowercase(Locale.getDefault())}|${it.description.lowercase(Locale.getDefault())}"
+        }.filterValues { it.size > 1 }.forEach { (_, duplicates) ->
+            issues += ValidationIssue("Possible duplicate", "${duplicates.size} similar ${duplicates.first().category} transactions on ${duplicates.first().date}.", "Warning")
+        }
+        state.categoryBudgets.filter { it.category.lowercase(Locale.getDefault()) !in categoryNames }.forEach {
+            issues += ValidationIssue("Unknown budget category", "${it.category} budget exists for ${it.period}, but the category is not configured.", "Warning")
+        }
+        state.recurringEntries.filter { it.dayOfMonth !in 1..31 }.forEach {
+            issues += ValidationIssue("Invalid recurring date", "${it.title} has day ${it.dayOfMonth}.", "Error")
+        }
+        if (repository.isReadyForLiveSync() && state.syncStatus.lastSyncError != null) {
+            issues += ValidationIssue("Google Sheets sync issue", state.syncStatus.lastSyncError, "Error")
+        }
+        return issues
+    }
+
+    fun buildSetupChecks(): List<SetupCheck> {
+        val configMessage = repository.getConfigurationStatusMessage()
+        val syncStatus = _uiState.value.syncStatus
+        return listOf(
+            SetupCheck(
+                title = "Spreadsheet ID",
+                detail = if (configMessage?.contains("Spreadsheet ID") == true) configMessage else "Spreadsheet ID is configured.",
+                passed = configMessage?.contains("Spreadsheet ID") != true
+            ),
+            SetupCheck(
+                title = "Service account JSON",
+                detail = if (configMessage?.contains("service-account-key.json") == true) configMessage else "Service account credentials are available.",
+                passed = configMessage?.contains("service-account-key.json") != true
+            ),
+            SetupCheck(
+                title = "Authentication and sheet sharing",
+                detail = syncStatus.lastSyncError ?: if (syncStatus.lastSuccessfulSyncMillis != null) "Last sync completed successfully." else "Run Refresh Data to verify access.",
+                passed = syncStatus.lastSuccessfulSyncMillis != null && syncStatus.lastSyncError == null
+            ),
+            SetupCheck(
+                title = "Required app data",
+                detail = "Loaded ${_uiState.value.categoryState.categories.size} categories, ${_uiState.value.incomeEntries.size} income rows, and ${_uiState.value.recurringEntries.size} recurring rows.",
+                passed = _uiState.value.categoryState.categories.isNotEmpty()
+            )
+        )
+    }
+
+    fun addTransactionTemplate(template: TransactionTemplate) {
+        val normalized = template.copy(
+            id = template.id.ifBlank { UUID.randomUUID().toString() },
+            name = template.name.trim(),
+            currencyCode = Currency.fromCode(template.currencyCode).code
+        )
+        if (normalized.name.isBlank() || normalized.category.isBlank() || normalized.amount <= 0.0) return
+        val templates = (_uiState.value.transactionTemplates.filterNot { it.id == normalized.id } + normalized)
+            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        repository.saveTransactionTemplates(templates)
+        updateLocalState(_uiState.value.copy(transactionTemplates = templates))
+    }
+
+    fun deleteTransactionTemplate(templateId: String) {
+        val templates = _uiState.value.transactionTemplates.filterNot { it.id == templateId }
+        repository.saveTransactionTemplates(templates)
+        updateLocalState(_uiState.value.copy(transactionTemplates = templates))
+    }
+
+    fun addOrUpdateSavingsGoal(goal: SavingsGoal) {
+        val normalized = goal.copy(
+            id = goal.id.ifBlank { UUID.randomUUID().toString() },
+            name = goal.name.trim(),
+            currencyCode = Currency.fromCode(goal.currencyCode).code
+        )
+        if (normalized.name.isBlank() || normalized.targetAmount <= 0.0) return
+        val goals = (_uiState.value.savingsGoals.filterNot { it.id == normalized.id } + normalized)
+            .sortedBy { it.name.lowercase(Locale.getDefault()) }
+        repository.saveSavingsGoals(goals)
+        updateLocalState(_uiState.value.copy(savingsGoals = goals))
+    }
+
+    fun deleteSavingsGoal(goalId: String) {
+        val goals = _uiState.value.savingsGoals.filterNot { it.id == goalId }
+        repository.saveSavingsGoals(goals)
+        updateLocalState(_uiState.value.copy(savingsGoals = goals))
+    }
+
     fun addOrUpdateAccountBalance(name: String, amount: Double, isDebt: Boolean) {
         val normalizedName = name.trim()
         if (normalizedName.isBlank()) return
@@ -367,6 +802,18 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 _uiState.value.copy(
                     accountBalances = repository.loadAccountBalances(),
                     includeTransfersInReports = repository.loadIncludeTransfersInReports(),
+                    transactionTemplates = repository.loadTransactionTemplates(),
+                    savingsGoals = repository.loadSavingsGoals(),
+                    exchangeRates = repository.loadExchangeRates(),
+                    exchangeConversionEnabled = repository.loadExchangeConversionEnabled(),
+                    biometricLockEnabled = repository.loadBiometricLockEnabled(),
+                    dashboardCardPreferences = repository.loadDashboardCardPreferences(),
+                    categoryRolloverSettings = repository.loadCategoryRolloverSettings(),
+                    monthlyCloseNotes = repository.loadMonthlyCloseNotes(),
+                    csvImportMapping = repository.loadCsvImportMapping(),
+                    debtAccounts = repository.loadDebtAccounts(),
+                    investmentHoldings = repository.loadInvestmentHoldings(),
+                    recurringReminderOccurrences = repository.loadRecurringReminderOccurrences(),
                     userMessage = "Latest backup restored."
                 )
             )
@@ -531,11 +978,15 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     fun toggleRecurringEntry(entry: RecurringEntry, active: Boolean) {
         val updatedEntry = entry.copy(active = active)
+        updateRecurringEntry(updatedEntry)
+    }
+
+    fun updateRecurringEntry(entry: RecurringEntry) {
         if (!repository.isReadyForLiveSync()) {
             updateLocalState(
                 _uiState.value.copy(
                     recurringEntries = _uiState.value.recurringEntries.map {
-                        if (it.id == entry.id) updatedEntry else it
+                        if (it.id == entry.id) entry else it
                     },
                     syncStatus = buildSyncStatus(isUsingCachedData = true)
                 )
@@ -545,11 +996,33 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             runCatching {
-                repository.updateRecurringEntry(updatedEntry)
+                repository.updateRecurringEntry(entry)
             }.onSuccess {
                 refreshAllData()
             }.onFailure { error ->
                 applyError(error.message ?: "Failed to update recurring entry.")
+            }
+        }
+    }
+
+    fun deleteRecurringEntry(entry: RecurringEntry) {
+        if (!repository.isReadyForLiveSync()) {
+            updateLocalState(
+                _uiState.value.copy(
+                    recurringEntries = _uiState.value.recurringEntries.filterNot { it.id == entry.id },
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.deleteRecurringEntry(entry.id)
+            }.onSuccess {
+                refreshAllData()
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to delete recurring entry.")
             }
         }
     }
@@ -747,6 +1220,20 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 applyError(error.message ?: "Failed to save recurring entry.")
             }
         }
+    }
+
+    private fun updateDashboardPreference(
+        cardId: String,
+        transform: (DashboardCardPreference) -> DashboardCardPreference
+    ) {
+        val preferences = _uiState.value.dashboardCardPreferences.ifEmpty {
+            repository.defaultDashboardCardPreferences()
+        }
+        val updated = preferences.map { preference ->
+            if (preference.id == cardId) transform(preference) else preference
+        }
+        repository.saveDashboardCardPreferences(updated)
+        updateLocalState(_uiState.value.copy(dashboardCardPreferences = repository.loadDashboardCardPreferences()))
     }
 
     private fun hydrateFromCache() {
