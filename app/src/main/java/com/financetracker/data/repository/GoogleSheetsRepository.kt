@@ -1,7 +1,10 @@
 package com.financetracker.data.repository
 
 import android.content.Context
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import com.financetracker.BuildConfig
+import com.financetracker.data.model.AccountBalance
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.CategoryBudget
 import com.financetracker.data.model.Currency
@@ -10,6 +13,7 @@ import com.financetracker.data.model.IncomeEntry
 import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.TransactionType
+import com.financetracker.data.model.isTransfer
 import com.financetracker.ui.theme.ThemeMode
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
@@ -30,6 +34,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.InputStream
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
@@ -52,6 +57,8 @@ class GoogleSheetsRepository(private val context: Context) {
         private const val LAST_SYNC_ERROR_KEY = "last_sync_error"
         private const val THEME_MODE_KEY = "theme_mode"
         private const val CURRENCY_KEY = "currency"
+        private const val ACCOUNT_BALANCES_KEY = "account_balances"
+        private const val INCLUDE_TRANSFERS_KEY = "include_transfers_in_reports"
         private val EXPENSE_SHEET_REGEX = Regex("""expenses_\d{4}_\d{2}""")
 
         private val DEFAULT_CATEGORIES = listOf(
@@ -80,6 +87,7 @@ class GoogleSheetsRepository(private val context: Context) {
             "Split Group ID",
             "Receipt URL",
             "Tags",
+            "Currency",
             "Created At",
             "Modified At",
             "Recurring ID",
@@ -108,7 +116,8 @@ class GoogleSheetsRepository(private val context: Context) {
         val reportExpenses: List<Expense>,
         val categories: List<Category>,
         val incomeEntries: List<IncomeEntry>,
-        val recurringEntries: List<RecurringEntry>
+        val recurringEntries: List<RecurringEntry>,
+        val categoryBudgets: List<CategoryBudget> = emptyList()
     )
 
     data class SyncSnapshot(
@@ -140,6 +149,15 @@ class GoogleSheetsRepository(private val context: Context) {
     fun getCurrentMonthSheetName(): String {
         val now = LocalDate.now()
         return "expenses_${now.year}_${String.format(Locale.US, "%02d", now.monthValue)}"
+    }
+
+    fun getSheetNameForPeriod(period: String): String {
+        val normalizedPeriod = normalizePeriod(period)
+        return "expenses_${normalizedPeriod.replace("-", "_")}"
+    }
+
+    fun getPeriodForSheet(sheetName: String): String {
+        return periodFromSheet(sheetName)
     }
 
     fun isReadyForLiveSync(): Boolean {
@@ -174,6 +192,166 @@ class GoogleSheetsRepository(private val context: Context) {
         prefs.edit().putString(CURRENCY_KEY, currency.code).apply()
     }
 
+    fun loadIncludeTransfersInReports(): Boolean {
+        return prefs.getBoolean(INCLUDE_TRANSFERS_KEY, false)
+    }
+
+    fun saveIncludeTransfersInReports(includeTransfers: Boolean) {
+        prefs.edit().putBoolean(INCLUDE_TRANSFERS_KEY, includeTransfers).apply()
+    }
+
+    fun loadAccountBalances(): List<AccountBalance> {
+        val rawJson = prefs.getString(ACCOUNT_BALANCES_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                AccountBalance(
+                    name = item.optString("name"),
+                    amount = item.optDouble("amount"),
+                    isDebt = item.optBoolean("isDebt", false)
+                )
+            }.filter { it.name.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveAccountBalances(accountBalances: List<AccountBalance>) {
+        val json = JSONArray().apply {
+            accountBalances.forEach { balance ->
+                put(
+                    JSONObject().apply {
+                        put("name", balance.name)
+                        put("amount", balance.amount)
+                        put("isDebt", balance.isDebt)
+                    }
+                )
+            }
+        }
+        prefs.edit().putString(ACCOUNT_BALANCES_KEY, json.toString()).apply()
+    }
+
+    fun exportTransactionsCsv(expenses: List<Expense>, incomeEntries: List<IncomeEntry>): String {
+        val exportDir = getExportDir()
+        val file = File(exportDir, "finance_export_${System.currentTimeMillis()}.csv")
+        val rows = buildList {
+            add("type,date_or_period,amount,currency,category,description,payment_method,transaction_type")
+            incomeEntries.sortedByDescending { it.period }.forEach { income ->
+                add(listOf("income", income.period, income.amount.toString(), Currency.getDefault().code, "", "", "", "").toCsvRow())
+            }
+            expenses.sortedByDescending { it.date }.forEach { expense ->
+                add(
+                    listOf(
+                        "expense",
+                        expense.date.toString(),
+                        expense.amount.toString(),
+                        Currency.fromCode(expense.currencyCode).code,
+                        expense.category,
+                        expense.description,
+                        expense.paymentMethod,
+                        expense.transactionType.name
+                    ).toCsvRow()
+                )
+            }
+        }
+        file.writeText(rows.joinToString("\n"), StandardCharsets.UTF_8)
+        return file.absolutePath
+    }
+
+    fun exportSummaryPdf(expenses: List<Expense>, incomeEntries: List<IncomeEntry>): String {
+        val exportDir = getExportDir()
+        val file = File(exportDir, "finance_summary_${System.currentTimeMillis()}.pdf")
+        val document = PdfDocument()
+        val page = document.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+        val canvas = page.canvas
+        val titlePaint = Paint().apply {
+            textSize = 20f
+            isFakeBoldText = true
+            color = android.graphics.Color.BLACK
+        }
+        val bodyPaint = Paint().apply {
+            textSize = 12f
+            color = android.graphics.Color.DKGRAY
+        }
+        var y = 48f
+        canvas.drawText("Finance Summary", 40f, y, titlePaint)
+        y += 32f
+
+        val expensesByMonth = expenses.groupBy { YearMonth.from(it.date) }
+        val incomeByMonth = incomeEntries.associate { it.period to it.amount }
+        val months = (expensesByMonth.keys + incomeEntries.mapNotNull { runCatching { YearMonth.parse(it.period) }.getOrNull() })
+            .distinct()
+            .sortedDescending()
+            .take(18)
+
+        months.forEach { month ->
+            val income = incomeByMonth[month.toString()] ?: 0.0
+            val spendingByCurrency = expensesByMonth[month]
+                .orEmpty()
+                .filterNot { it.isTransfer }
+                .groupBy { Currency.fromCode(it.currencyCode) }
+                .map { (currency, entries) -> "${currency.code} ${entries.sumOf { it.amount }}" }
+                .ifEmpty { listOf("No spending") }
+                .joinToString("; ")
+            val defaultCurrencySpending = expensesByMonth[month]
+                .orEmpty()
+                .filterNot { it.isTransfer }
+                .filter { Currency.fromCode(it.currencyCode) == Currency.getDefault() }
+                .sumOf { it.amount }
+            val savings = income - defaultCurrencySpending
+            canvas.drawText(
+                "${month}: Income $income | Spent $spendingByCurrency | Saved ${Currency.getDefault().code} $savings",
+                40f,
+                y,
+                bodyPaint
+            )
+            y += 22f
+            if (y > 800f) return@forEach
+        }
+
+        document.finishPage(page)
+        file.outputStream().use { output -> document.writeTo(output) }
+        document.close()
+        return file.absolutePath
+    }
+
+    fun backupCacheToFile(): String {
+        val exportDir = getExportDir()
+        val backupFile = File(exportDir, "finance_backup_${System.currentTimeMillis()}.json")
+        val backupJson = JSONObject().apply {
+            put("cachedFinanceData", prefs.getString(CACHE_KEY, null))
+            put("accountBalances", prefs.getString(ACCOUNT_BALANCES_KEY, null))
+            put("includeTransfersInReports", loadIncludeTransfersInReports())
+            put("themeMode", prefs.getString(THEME_MODE_KEY, ThemeMode.SYSTEM.name))
+            put("currency", prefs.getString(CURRENCY_KEY, Currency.getDefault().code))
+        }
+        backupFile.writeText(backupJson.toString(), StandardCharsets.UTF_8)
+        return backupFile.absolutePath
+    }
+
+    fun restoreLatestBackup(): Boolean {
+        val latestBackup = getExportDir()
+            .listFiles { file -> file.name.startsWith("finance_backup_") && file.extension == "json" }
+            ?.maxByOrNull { it.lastModified() }
+            ?: return false
+
+        return runCatching {
+            val backupJson = JSONObject(latestBackup.readText(StandardCharsets.UTF_8))
+            prefs.edit().apply {
+                backupJson.optString("cachedFinanceData").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(CACHE_KEY, it)
+                }
+                backupJson.optString("accountBalances").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(ACCOUNT_BALANCES_KEY, it)
+                }
+                putBoolean(INCLUDE_TRANSFERS_KEY, backupJson.optBoolean("includeTransfersInReports", false))
+                backupJson.optString("themeMode").takeIf { it.isNotBlank() }?.let { putString(THEME_MODE_KEY, it) }
+                backupJson.optString("currency").takeIf { it.isNotBlank() }?.let { putString(CURRENCY_KEY, it) }
+                apply()
+            }
+            true
+        }.getOrDefault(false)
+    }
+
     fun loadCachedData(): CachedFinanceData? {
         val rawJson = prefs.getString(CACHE_KEY, null) ?: return null
         return runCatching {
@@ -184,7 +362,8 @@ class GoogleSheetsRepository(private val context: Context) {
                 reportExpenses = json.optJSONArray("reportExpenses").toExpenseList(),
                 categories = json.optJSONArray("categories").toCategoryList(),
                 incomeEntries = json.optJSONArray("incomeEntries").toIncomeEntryList(),
-                recurringEntries = json.optJSONArray("recurringEntries").toRecurringEntryList()
+                recurringEntries = json.optJSONArray("recurringEntries").toRecurringEntryList(),
+                categoryBudgets = json.optJSONArray("categoryBudgets").toCategoryBudgetList()
             )
         }.getOrNull()
     }
@@ -197,6 +376,7 @@ class GoogleSheetsRepository(private val context: Context) {
             put("categories", JSONArray().apply { data.categories.forEach { put(it.toJson()) } })
             put("incomeEntries", JSONArray().apply { data.incomeEntries.forEach { put(it.toJson()) } })
             put("recurringEntries", JSONArray().apply { data.recurringEntries.forEach { put(it.toJson()) } })
+            put("categoryBudgets", JSONArray().apply { data.categoryBudgets.forEach { put(it.toJson()) } })
         }
 
         prefs.edit().putString(CACHE_KEY, json.toString()).apply()
@@ -246,7 +426,7 @@ class GoogleSheetsRepository(private val context: Context) {
         service.spreadsheets().values()
             .update(
                 spreadsheetId,
-                "$sheetName!A${expense.sheetRowIndex}:P${expense.sheetRowIndex}",
+                "$sheetName!A${expense.sheetRowIndex}:Q${expense.sheetRowIndex}",
                 ValueRange().setValues(listOf(expense.toSheetRow(LocalDateTime.now())))
             )
             .setValueInputOption("RAW")
@@ -274,6 +454,61 @@ class GoogleSheetsRepository(private val context: Context) {
             spreadsheetId,
             BatchUpdateSpreadsheetRequest().setRequests(listOf(deleteRequest))
         ).execute()
+
+        true
+    }
+
+    suspend fun clearExpensesForDay(sheetName: String, date: LocalDate): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        val sheetId = ensureExpenseSheet(service, sheetName).sheetId ?: return@withContext false
+        val rowIndexes = readExpensesFromSheet(service, sheetName)
+            .filter { it.date == date }
+            .map { it.sheetRowIndex }
+            .filter { it > 1 }
+            .sortedDescending()
+
+        if (rowIndexes.isEmpty()) return@withContext true
+
+        val requests = rowIndexes.map { rowIndex ->
+            Request().setDeleteDimension(
+                DeleteDimensionRequest().setRange(
+                    DimensionRange()
+                        .setSheetId(sheetId)
+                        .setDimension("ROWS")
+                        .setStartIndex(rowIndex - 1)
+                        .setEndIndex(rowIndex)
+                )
+            )
+        }
+
+        service.spreadsheets().batchUpdate(
+            spreadsheetId,
+            BatchUpdateSpreadsheetRequest().setRequests(requests)
+        ).execute()
+
+        true
+    }
+
+    suspend fun clearExpensesForMonth(sheetName: String): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+        ensureExpenseSheet(service, sheetName)
+
+        service.spreadsheets().values()
+            .clear(spreadsheetId, "$sheetName!A2:Q", ClearValuesRequest())
+            .execute()
+
+        true
+    }
+
+    suspend fun clearAllExpenses(): Boolean = withContext(Dispatchers.IO) {
+        val service = getSheetsService() ?: return@withContext false
+
+        getExpenseSheetTitles(service).forEach { sheetName ->
+            ensureExpenseSheet(service, sheetName)
+            service.spreadsheets().values()
+                .clear(spreadsheetId, "$sheetName!A2:Q", ClearValuesRequest())
+                .execute()
+        }
 
         true
     }
@@ -780,6 +1015,7 @@ class GoogleSheetsRepository(private val context: Context) {
             val categories = fetchCategories()
             val incomeEntries = fetchIncomeEntries()
             val recurringEntries = fetchRecurringEntries()
+            val categoryBudgets = fetchAllCategoryBudgets()
             
             // Apply recurring entries
             val appliedData = applyRecurringEntries(
@@ -798,7 +1034,8 @@ class GoogleSheetsRepository(private val context: Context) {
                     reportExpenses = appliedData.reportExpenses,
                     categories = categories,
                     incomeEntries = appliedData.incomeEntries,
-                    recurringEntries = recurringEntries
+                    recurringEntries = recurringEntries,
+                    categoryBudgets = categoryBudgets
                 )
             )
             
@@ -1017,7 +1254,7 @@ class GoogleSheetsRepository(private val context: Context) {
 
     private fun appendExpenseRow(service: Sheets, sheetName: String, expense: Expense) {
         service.spreadsheets().values()
-            .append(spreadsheetId, "$sheetName!A:P", ValueRange().setValues(listOf(expense.toSheetRow())))
+            .append(spreadsheetId, "$sheetName!A:Q", ValueRange().setValues(listOf(expense.toSheetRow())))
             .setValueInputOption("RAW")
             .execute()
     }
@@ -1031,7 +1268,7 @@ class GoogleSheetsRepository(private val context: Context) {
 
         if (values.isEmpty()) {
             service.spreadsheets().values()
-                .update(spreadsheetId, "$sheetName!A1:P1", ValueRange().setValues(listOf(EXPENSE_HEADERS)))
+                .update(spreadsheetId, "$sheetName!A1:Q1", ValueRange().setValues(listOf(EXPENSE_HEADERS)))
                 .setValueInputOption("RAW")
                 .execute()
             return
@@ -1070,7 +1307,7 @@ class GoogleSheetsRepository(private val context: Context) {
         }
 
         service.spreadsheets().values()
-            .update(spreadsheetId, "$sheetName!A1:P", ValueRange().setValues(rewrittenValues))
+            .update(spreadsheetId, "$sheetName!A1:Q", ValueRange().setValues(rewrittenValues))
             .setValueInputOption("RAW")
             .execute()
     }
@@ -1081,7 +1318,7 @@ class GoogleSheetsRepository(private val context: Context) {
         includeSheetPrefix: Boolean = false
     ): List<Expense> {
         val values = service.spreadsheets().values()
-            .get(spreadsheetId, "$sheetName!A2:P")
+            .get(spreadsheetId, "$sheetName!A2:Q")
             .execute()
             .getValues()
             .orEmpty()
@@ -1137,29 +1374,34 @@ class GoogleSheetsRepository(private val context: Context) {
         )
 
         return headerMappedExpense ?: when {
-            isCurrentExpenseSchema(row) -> Expense(
-                id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
-                date = parseDate(row.valueAt(0)),
-                amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
-                category = row.valueAt(2),
-                subcategory = row.valueAt(3).ifBlank { null },
-                description = row.valueAt(4),
-                paymentMethod = row.valueAt(5).ifBlank { "Cash" },
-                transferAccount = row.valueAt(6).ifBlank { null },
-                transferDestinationAccount = row.valueAt(7).ifBlank { null },
-                transactionType = parseTransactionType(row.valueAt(8)),
-                splitGroupId = row.valueAt(9).ifBlank { null },
-                receiptUrl = row.valueAt(10).ifBlank { null },
-                tags = row.valueAt(11)
-                    .split(",")
-                    .map { it.trim() }
-                    .filter { it.isNotBlank() },
-                createdAt = parseDateTime(row.valueAt(12)),
-                modifiedAt = parseDateTime(row.valueAt(13)),
-                recurringEntryId = row.valueAt(14).ifBlank { null },
-                occurrencePeriod = row.valueAt(15).ifBlank { null },
-                sheetRowIndex = rowIndex
-            )
+            isCurrentExpenseSchema(row) -> {
+                val hasCurrencyColumn = row.size >= 17
+                val currencyOffset = if (hasCurrencyColumn) 1 else 0
+                Expense(
+                    id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
+                    date = parseDate(row.valueAt(0)),
+                    amount = row.valueAt(1).toDoubleOrNull() ?: 0.0,
+                    category = row.valueAt(2),
+                    subcategory = row.valueAt(3).ifBlank { null },
+                    description = row.valueAt(4),
+                    paymentMethod = row.valueAt(5).ifBlank { "Cash" },
+                    transferAccount = row.valueAt(6).ifBlank { null },
+                    transferDestinationAccount = row.valueAt(7).ifBlank { null },
+                    transactionType = parseTransactionType(row.valueAt(8)),
+                    splitGroupId = row.valueAt(9).ifBlank { null },
+                    receiptUrl = row.valueAt(10).ifBlank { null },
+                    tags = row.valueAt(11)
+                        .split(",")
+                        .map { it.trim() }
+                        .filter { it.isNotBlank() },
+                    currencyCode = Currency.fromCode(row.valueAt(12).ifBlank { Currency.getDefault().code }).code,
+                    createdAt = parseDateTime(row.valueAt(12 + currencyOffset)),
+                    modifiedAt = parseDateTime(row.valueAt(13 + currencyOffset)),
+                    recurringEntryId = row.valueAt(14 + currencyOffset).ifBlank { null },
+                    occurrencePeriod = row.valueAt(15 + currencyOffset).ifBlank { null },
+                    sheetRowIndex = rowIndex
+                )
+            }
 
             isIntermediateExpenseSchema(row) -> Expense(
                 id = if (includeSheetPrefix) "$sheetName#row_$rowIndex" else "row_$rowIndex",
@@ -1261,6 +1503,7 @@ class GoogleSheetsRepository(private val context: Context) {
             modifiedAt = parseDateTime(row.headerValue(headerIndexes, "modifiedat")),
             recurringEntryId = row.headerValue(headerIndexes, "recurringid").ifBlank { null },
             occurrencePeriod = row.headerValue(headerIndexes, "occurrenceperiod").ifBlank { null },
+            currencyCode = Currency.fromCode(row.headerValue(headerIndexes, "currency").ifBlank { Currency.getDefault().code }).code,
             sheetRowIndex = rowIndex
         )
     }
@@ -1302,6 +1545,7 @@ class GoogleSheetsRepository(private val context: Context) {
             splitGroupId.orEmpty(),
             receiptUrl.orEmpty(),
             tags.joinToString(","),
+            Currency.fromCode(currencyCode).code,
             createdAt.toString(),
             modifiedAt.toString(),
             recurringEntryId.orEmpty(),
@@ -1338,6 +1582,7 @@ class GoogleSheetsRepository(private val context: Context) {
             put("splitGroupId", splitGroupId)
             put("receiptUrl", receiptUrl)
             put("tags", JSONArray(tags))
+            put("currencyCode", Currency.fromCode(currencyCode).code)
             put("createdAt", createdAt.toString())
             put("modifiedAt", modifiedAt.toString())
             put("recurringEntryId", recurringEntryId)
@@ -1398,6 +1643,11 @@ class GoogleSheetsRepository(private val context: Context) {
         return List(length()) { index -> getJSONObject(index).toRecurringEntry() }
     }
 
+    private fun JSONArray?.toCategoryBudgetList(): List<CategoryBudget> {
+        if (this == null) return emptyList()
+        return List(length()) { index -> getJSONObject(index).toCategoryBudget() }
+    }
+
     private fun JSONObject.toExpense(): Expense {
         return Expense(
             id = optString("id"),
@@ -1415,6 +1665,7 @@ class GoogleSheetsRepository(private val context: Context) {
             tags = optJSONArray("tags")?.let { tagsArray ->
                 List(tagsArray.length()) { index -> tagsArray.optString(index) }
             }.orEmpty(),
+            currencyCode = Currency.fromCode(optString("currencyCode", Currency.getDefault().code)).code,
             createdAt = parseDateTime(optString("createdAt")),
             modifiedAt = parseDateTime(optString("modifiedAt")),
             recurringEntryId = optString("recurringEntryId").ifBlank { null },
@@ -1456,6 +1707,16 @@ class GoogleSheetsRepository(private val context: Context) {
         )
     }
 
+    private fun JSONObject.toCategoryBudget(): CategoryBudget {
+        return CategoryBudget(
+            id = optString("id"),
+            category = optString("category"),
+            period = normalizePeriod(optString("period")),
+            amount = optDouble("amount"),
+            sheetRowIndex = optInt("sheetRowIndex", -1)
+        )
+    }
+
     private val CURRENT_EXPENSE_HEADER_KEYS = setOf(
         "date",
         "amount",
@@ -1469,6 +1730,7 @@ class GoogleSheetsRepository(private val context: Context) {
         "splitgroupid",
         "receipturl",
         "tags",
+        "currency",
         "createdat",
         "modifiedat",
         "recurringid",
@@ -1492,6 +1754,21 @@ class GoogleSheetsRepository(private val context: Context) {
     private fun parseTransactionType(value: String): TransactionType {
         return runCatching { TransactionType.valueOf(value.ifBlank { TransactionType.EXPENSE.name }) }
             .getOrDefault(TransactionType.EXPENSE)
+    }
+
+    private fun getExportDir(): File {
+        return File(context.getExternalFilesDir(null), "exports").apply { mkdirs() }
+    }
+
+    private fun List<String>.toCsvRow(): String {
+        return joinToString(",") { value ->
+            val escaped = value.replace("\"", "\"\"")
+            if (escaped.any { it == ',' || it == '"' || it == '\n' }) {
+                "\"$escaped\""
+            } else {
+                escaped
+            }
+        }
     }
 
     private fun periodFromSheet(sheetName: String): String {

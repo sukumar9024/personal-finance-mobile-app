@@ -3,6 +3,7 @@ package com.financetracker.ui.viewmodel
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.financetracker.data.model.AccountBalance
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.CategoryBudget
 import com.financetracker.data.model.Expense
@@ -41,6 +42,7 @@ data class SyncStatus(
 
 data class PendingUndoDelete(
     val expense: Expense,
+    val sheetName: String,
     val token: Long = System.currentTimeMillis()
 )
 
@@ -66,20 +68,27 @@ data class FinanceTrackerUiState(
     val pendingUndoDelete: PendingUndoDelete? = null,
     val overspendingAlert: OverspendingAlert? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val currency: Currency = Currency.getDefault()
+    val currency: Currency = Currency.getDefault(),
+    val includeTransfersInReports: Boolean = false,
+    val accountBalances: List<AccountBalance> = emptyList(),
+    val userMessage: String? = null
 )
 
 class ExpenseViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = GoogleSheetsRepository(application)
     private val savedThemeMode = repository.loadThemeMode()
     private val savedCurrency = repository.loadCurrency()
+    private val savedIncludeTransfersInReports = repository.loadIncludeTransfersInReports()
+    private val savedAccountBalances = repository.loadAccountBalances()
 
     private val _uiState = MutableStateFlow(
         FinanceTrackerUiState(
             currentMonthSheet = repository.getCurrentMonthSheetName(),
             syncStatus = buildSyncStatus(isUsingCachedData = false),
             themeMode = savedThemeMode,
-            currency = savedCurrency
+            currency = savedCurrency,
+            includeTransfersInReports = savedIncludeTransfersInReports,
+            accountBalances = savedAccountBalances
         )
     )
     val uiState: StateFlow<FinanceTrackerUiState> = _uiState.asStateFlow()
@@ -94,6 +103,47 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         refreshAllData()
     }
 
+    fun selectMonth(period: String) {
+        val normalizedPeriod = runCatching { YearMonth.parse(period.trim()).toString() }
+            .getOrDefault(period.trim())
+        if (normalizedPeriod.isBlank()) return
+
+        val selectedSheet = repository.getSheetNameForPeriod(normalizedPeriod)
+        if (_uiState.value.currentMonthSheet == selectedSheet && !_uiState.value.isLoading) return
+
+        if (!repository.isReadyForLiveSync()) {
+            val allCachedExpenses = _uiState.value.reportExpenses.ifEmpty { _uiState.value.expenses }
+            val selectedExpenses = allCachedExpenses
+                .filter { YearMonth.from(it.date).toString() == normalizedPeriod }
+                .sortedByDescending { it.date }
+            updateLocalState(
+                _uiState.value.copy(
+                    currentMonthSheet = selectedSheet,
+                    expenses = selectedExpenses,
+                    monthlyIncome = incomeForPeriod(_uiState.value.incomeEntries, selectedSheet),
+                    totalAmount = selectedExpenses.spendingTotal(),
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        val allCachedExpenses = _uiState.value.reportExpenses.ifEmpty { _uiState.value.expenses }
+        val selectedExpenses = allCachedExpenses
+            .filter { YearMonth.from(it.date).toString() == normalizedPeriod }
+            .sortedByDescending { it.date }
+        updateLocalState(
+            _uiState.value.copy(
+                currentMonthSheet = selectedSheet,
+                expenses = selectedExpenses,
+                monthlyIncome = incomeForPeriod(_uiState.value.incomeEntries, selectedSheet),
+                totalAmount = selectedExpenses.spendingTotal()
+            )
+        )
+        refreshAllData()
+    }
+
     fun loadExpenses() {
         refreshAllData()
     }
@@ -103,8 +153,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun addExpense(expense: Expense) {
+        val targetSheet = sheetNameForExpense(expense)
         if (!repository.isReadyForLiveSync()) {
-            val newExpenses = _uiState.value.expenses + expense
+            val isSelectedMonth = targetSheet == currentSheetName()
+            val newExpenses = if (isSelectedMonth) _uiState.value.expenses + expense else _uiState.value.expenses
             updateLocalState(
                 _uiState.value.copy(
                     expenses = newExpenses.sortedByDescending { it.date },
@@ -118,9 +170,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
 
         viewModelScope.launch {
-            val currentSheet = currentSheetName()
             runCatching {
-                repository.addExpense(currentSheet, expense)
+                repository.addExpense(targetSheet, expense)
             }.onSuccess {
                 refreshAllData()
             }.onFailure { error ->
@@ -134,7 +185,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         if (normalizedExpenses.isEmpty()) return
 
         if (!repository.isReadyForLiveSync()) {
-            val newExpenses = (_uiState.value.expenses + normalizedExpenses)
+            val selectedSheet = currentSheetName()
+            val selectedMonthExpenses = normalizedExpenses.filter { sheetNameForExpense(it) == selectedSheet }
+            val newExpenses = (_uiState.value.expenses + selectedMonthExpenses)
                 .sortedWith(compareByDescending<Expense> { it.date }.thenByDescending { it.modifiedAt })
             val newReportExpenses = (_uiState.value.reportExpenses + normalizedExpenses)
                 .sortedWith(compareByDescending<Expense> { it.date }.thenByDescending { it.modifiedAt })
@@ -151,10 +204,9 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
 
         viewModelScope.launch {
-            val currentSheet = currentSheetName()
             runCatching {
                 normalizedExpenses.forEach { expense ->
-                    repository.addExpense(currentSheet, expense)
+                    repository.addExpense(sheetNameForExpense(expense), expense)
                 }
             }.onSuccess {
                 refreshAllData()
@@ -165,10 +217,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateExpense(expense: Expense) {
+        val originalExpense = _uiState.value.expenses.find { it.id == expense.id }
+            ?: _uiState.value.reportExpenses.find { it.id == expense.id }
+        val originalSheet = originalExpense?.let(::sheetNameForExpense) ?: currentSheetName()
+        val targetSheet = sheetNameForExpense(expense)
         if (!repository.isReadyForLiveSync()) {
-            val newExpenses = _uiState.value.expenses.map {
-                if (it.id == expense.id) expense else it
-            }
+            val newExpenses = (_uiState.value.expenses.filterNot { it.id == expense.id } +
+                listOf(expense).filter { sheetNameForExpense(it) == currentSheetName() })
             val newReportExpenses = _uiState.value.reportExpenses.map {
                 if (it.id == expense.id) expense else it
             }
@@ -185,9 +240,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         }
 
         viewModelScope.launch {
-            val currentSheet = currentSheetName()
             runCatching {
-                repository.updateExpense(currentSheet, expense)
+                if (originalSheet == targetSheet) {
+                    repository.updateExpense(targetSheet, expense)
+                } else {
+                    repository.deleteExpense(originalSheet, expense.id)
+                    repository.addExpense(targetSheet, expense.copy(sheetRowIndex = -1))
+                }
             }.onSuccess {
                 refreshAllData()
             }.onFailure { error ->
@@ -198,6 +257,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     fun deleteExpense(id: String) {
         val deletedExpense = _uiState.value.expenses.find { it.id == id } ?: _uiState.value.reportExpenses.find { it.id == id }
+        val targetSheet = deletedExpense?.let(::sheetNameForExpense) ?: currentSheetName()
         if (!repository.isReadyForLiveSync()) {
             val newExpenses = _uiState.value.expenses.filter { it.id != id }
             val newReportExpenses = _uiState.value.reportExpenses.filter { it.id != id }
@@ -208,18 +268,17 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     totalAmount = newExpenses.spendingTotal(),
                     errorMessage = repository.getConfigurationStatusMessage(),
                     syncStatus = buildSyncStatus(isUsingCachedData = true),
-                    pendingUndoDelete = deletedExpense?.let(::PendingUndoDelete)
+                    pendingUndoDelete = deletedExpense?.let { PendingUndoDelete(it, targetSheet) }
                 )
             )
             return
         }
 
         viewModelScope.launch {
-            val currentSheet = currentSheetName()
             runCatching {
-                repository.deleteExpense(currentSheet, id)
+                repository.deleteExpense(targetSheet, id)
             }.onSuccess {
-                refreshAllData(pendingUndoExpense = deletedExpense)
+                refreshAllData(pendingUndoExpense = deletedExpense, pendingUndoSheet = targetSheet)
             }.onFailure { error ->
                 applyError(error.message ?: "Failed to delete expense from Google Sheets.")
             }
@@ -259,8 +318,155 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         updateLocalState(_uiState.value.copy(currency = currency))
     }
 
+    fun setIncludeTransfersInReports(includeTransfers: Boolean) {
+        repository.saveIncludeTransfersInReports(includeTransfers)
+        updateLocalState(_uiState.value.copy(includeTransfersInReports = includeTransfers))
+    }
+
+    fun addOrUpdateAccountBalance(name: String, amount: Double, isDebt: Boolean) {
+        val normalizedName = name.trim()
+        if (normalizedName.isBlank()) return
+        val updatedBalances = _uiState.value.accountBalances
+            .filterNot { it.name.equals(normalizedName, ignoreCase = true) } +
+            AccountBalance(normalizedName, amount, isDebt)
+        repository.saveAccountBalances(updatedBalances.sortedBy { it.name.lowercase(Locale.getDefault()) })
+        updateLocalState(_uiState.value.copy(accountBalances = repository.loadAccountBalances()))
+    }
+
+    fun removeAccountBalance(name: String) {
+        val updatedBalances = _uiState.value.accountBalances
+            .filterNot { it.name.equals(name, ignoreCase = true) }
+        repository.saveAccountBalances(updatedBalances)
+        updateLocalState(_uiState.value.copy(accountBalances = updatedBalances))
+    }
+
+    fun exportData() {
+        runCatching {
+            val expenses = _uiState.value.reportExpenses.ifEmpty { _uiState.value.expenses }
+            val incomeEntries = _uiState.value.incomeEntries
+            val csvPath = repository.exportTransactionsCsv(expenses, incomeEntries)
+            val pdfPath = repository.exportSummaryPdf(expenses, incomeEntries)
+            "$csvPath and $pdfPath"
+        }.onSuccess { path ->
+            updateLocalState(_uiState.value.copy(userMessage = "Export saved: $path"))
+        }.onFailure { error ->
+            updateLocalState(_uiState.value.copy(userMessage = error.message ?: "Failed to export data."))
+        }
+    }
+
+    fun backupData() {
+        runCatching { repository.backupCacheToFile() }
+            .onSuccess { path -> updateLocalState(_uiState.value.copy(userMessage = "Backup saved: $path")) }
+            .onFailure { error -> updateLocalState(_uiState.value.copy(userMessage = error.message ?: "Failed to back up data.")) }
+    }
+
+    fun restoreLatestBackup() {
+        if (repository.restoreLatestBackup()) {
+            hydrateFromCache()
+            updateLocalState(
+                _uiState.value.copy(
+                    accountBalances = repository.loadAccountBalances(),
+                    includeTransfersInReports = repository.loadIncludeTransfersInReports(),
+                    userMessage = "Latest backup restored."
+                )
+            )
+        } else {
+            updateLocalState(_uiState.value.copy(userMessage = "No backup file found."))
+        }
+    }
+
+    fun consumeUserMessage() {
+        if (_uiState.value.userMessage == null) return
+        updateLocalState(_uiState.value.copy(userMessage = null))
+    }
+
     fun setMonthlyIncome(amount: Double) {
         setMonthlyIncomeForPeriod(periodFromSheet(currentSheetName()), amount)
+    }
+
+    fun clearTransactionsForDay(date: LocalDate) {
+        val targetSheet = repository.getSheetNameForPeriod(YearMonth.from(date).toString())
+
+        if (!repository.isReadyForLiveSync()) {
+            val newExpenses = _uiState.value.expenses.filterNot { it.date == date }
+            val newReportExpenses = _uiState.value.reportExpenses.filterNot { it.date == date }
+            updateLocalState(
+                _uiState.value.copy(
+                    expenses = newExpenses,
+                    reportExpenses = newReportExpenses,
+                    totalAmount = newExpenses.spendingTotal(),
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.clearExpensesForDay(targetSheet, date)
+            }.onSuccess {
+                refreshAllData()
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to clear transactions for the selected day.")
+            }
+        }
+    }
+
+    fun clearTransactionsForSelectedMonth() {
+        val selectedSheet = currentSheetName()
+        val selectedPeriod = periodFromSheet(selectedSheet)
+
+        if (!repository.isReadyForLiveSync()) {
+            val newReportExpenses = _uiState.value.reportExpenses.filterNot {
+                YearMonth.from(it.date).toString() == selectedPeriod
+            }
+            updateLocalState(
+                _uiState.value.copy(
+                    expenses = emptyList(),
+                    reportExpenses = newReportExpenses,
+                    totalAmount = 0.0,
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.clearExpensesForMonth(selectedSheet)
+            }.onSuccess {
+                refreshAllData()
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to clear transactions for this month.")
+            }
+        }
+    }
+
+    fun clearAllTransactions() {
+        if (!repository.isReadyForLiveSync()) {
+            updateLocalState(
+                _uiState.value.copy(
+                    expenses = emptyList(),
+                    reportExpenses = emptyList(),
+                    totalAmount = 0.0,
+                    errorMessage = repository.getConfigurationStatusMessage(),
+                    syncStatus = buildSyncStatus(isUsingCachedData = true)
+                )
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            runCatching {
+                repository.clearAllExpenses()
+            }.onSuccess {
+                refreshAllData()
+            }.onFailure { error ->
+                applyError(error.message ?: "Failed to clear all transactions.")
+            }
+        }
     }
 
     fun setMonthlyIncomeForPeriod(period: String, amount: Double) {
@@ -545,26 +751,32 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     private fun hydrateFromCache() {
         val cachedData = repository.loadCachedData() ?: return
-        val currentSheet = repository.getCurrentMonthSheetName()
+        val currentSheet = cachedData.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+        val currentPeriod = periodFromSheet(currentSheet)
         val categories = mergeWithDefaultCategories(
             cachedData.categories.ifEmpty { repository.getDefaultCategories() }
         )
+        val reportExpenses = cachedData.reportExpenses.ifEmpty { cachedData.expenses }
+        val selectedExpenses = reportExpenses
+            .filter { YearMonth.from(it.date).toString() == currentPeriod }
+            .ifEmpty { cachedData.expenses.filter { YearMonth.from(it.date).toString() == currentPeriod } }
         val stateFromCache = _uiState.value.copy(
             currentMonthSheet = currentSheet,
-            expenses = cachedData.expenses,
-            reportExpenses = cachedData.reportExpenses.ifEmpty { cachedData.expenses },
+            expenses = selectedExpenses.sortedByDescending { it.date },
+            reportExpenses = reportExpenses.sortedWith(compareByDescending<Expense> { it.date }.thenByDescending { it.modifiedAt }),
             incomeEntries = cachedData.incomeEntries.sortedByDescending { it.period },
             recurringEntries = cachedData.recurringEntries.sortedBy { it.dayOfMonth },
             monthlyIncome = incomeForPeriod(cachedData.incomeEntries, currentSheet),
+            categoryBudgets = cachedData.categoryBudgets,
             categoryState = CategoryState(categories = categories, isLoading = false),
-            totalAmount = cachedData.expenses.spendingTotal(),
+            totalAmount = selectedExpenses.spendingTotal(),
             syncStatus = buildSyncStatus(isUsingCachedData = true),
             errorMessage = null
         )
         _uiState.value = stateFromCache
     }
 
-    private fun refreshAllData(pendingUndoExpense: Expense? = null) {
+    private fun refreshAllData(pendingUndoExpense: Expense? = null, pendingUndoSheet: String = currentSheetName()) {
         viewModelScope.launch {
             val existingState = _uiState.value
             _uiState.value = existingState.copy(
@@ -576,19 +788,23 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 )
             )
 
-            val currentSheet = repository.getCurrentMonthSheetName()
+            val currentSheet = existingState.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+            val currentPeriod = periodFromSheet(currentSheet)
             val isLiveSyncReady = repository.isReadyForLiveSync()
 
             if (!isLiveSyncReady) {
                 val categories = mergeWithDefaultCategories(
                     existingState.categoryState.categories.ifEmpty { repository.getDefaultCategories() }
                 )
+                val allCachedExpenses = existingState.reportExpenses.ifEmpty { existingState.expenses }
+                val selectedExpenses = allCachedExpenses.filter { YearMonth.from(it.date).toString() == currentPeriod }
                 updateLocalState(
                     existingState.copy(
                         currentMonthSheet = currentSheet,
+                        expenses = selectedExpenses.sortedByDescending { it.date },
                         categoryState = CategoryState(categories = categories, isLoading = false),
                         monthlyIncome = incomeForPeriod(existingState.incomeEntries, currentSheet),
-                        totalAmount = existingState.expenses.spendingTotal(),
+                        totalAmount = selectedExpenses.spendingTotal(),
                         isLoading = false,
                         errorMessage = repository.getConfigurationStatusMessage(),
                         syncStatus = buildSyncStatus(isUsingCachedData = true)
@@ -627,18 +843,20 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             var incomeEntries = refreshResults.incomeEntries.getOrDefault(existingState.incomeEntries)
             val recurringEntries = refreshResults.recurringEntries.getOrDefault(existingState.recurringEntries)
 
-            runCatching {
-                repository.applyRecurringEntries(
-                    currentSheet = currentSheet,
-                    existingExpenses = expenses,
-                    allExpenses = reportExpenses,
-                    incomeEntries = incomeEntries,
-                    recurringEntries = recurringEntries
-                )
-            }.onSuccess { applied ->
-                expenses = applied.expenses
-                reportExpenses = applied.reportExpenses
-                incomeEntries = applied.incomeEntries
+            if (currentSheet == repository.getCurrentMonthSheetName()) {
+                runCatching {
+                    repository.applyRecurringEntries(
+                        currentSheet = currentSheet,
+                        existingExpenses = expenses,
+                        allExpenses = reportExpenses,
+                        incomeEntries = incomeEntries,
+                        recurringEntries = recurringEntries
+                    )
+                }.onSuccess { applied ->
+                    expenses = applied.expenses
+                    reportExpenses = applied.reportExpenses
+                    incomeEntries = applied.incomeEntries
+                }
             }
 
             val firstLoadError = listOfNotNull(
@@ -669,12 +887,13 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     isLoading = false,
                     errorMessage = firstLoadError,
                     syncStatus = buildSyncStatus(isUsingCachedData = firstLoadError != null),
-                    pendingUndoDelete = pendingUndoExpense?.let(::PendingUndoDelete),
+                    pendingUndoDelete = pendingUndoExpense?.let { PendingUndoDelete(it, pendingUndoSheet) },
                     overspendingAlert = buildOverspendingAlert(
                         categories = categories,
                         monthlyIncome = incomeForPeriod(incomeEntries, currentSheet),
                         totalAmount = expenses.spendingTotal(),
-                        expenses = expenses
+                        expenses = expenses,
+                        period = currentPeriod
                     ),
                     themeMode = existingState.themeMode
                 )
@@ -692,7 +911,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 reportExpenses = newState.reportExpenses,
                 categories = newState.categoryState.categories,
                 incomeEntries = newState.incomeEntries,
-                recurringEntries = newState.recurringEntries
+                recurringEntries = newState.recurringEntries,
+                categoryBudgets = newState.categoryBudgets
             )
         )
     }
@@ -709,7 +929,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                     categories = _uiState.value.categoryState.categories,
                     monthlyIncome = _uiState.value.monthlyIncome,
                     totalAmount = _uiState.value.totalAmount,
-                    expenses = _uiState.value.expenses
+                    expenses = _uiState.value.expenses,
+                    period = periodFromSheet(_uiState.value.currentMonthSheet)
                 )
             )
         )
@@ -736,6 +957,10 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
 
     private fun currentSheetName(): String {
         return _uiState.value.currentMonthSheet.ifBlank { repository.getCurrentMonthSheetName() }
+    }
+
+    private fun sheetNameForExpense(expense: Expense): String {
+        return repository.getSheetNameForPeriod(YearMonth.from(expense.date).toString())
     }
 
     private fun defaultCategories(): List<Category> {
@@ -786,7 +1011,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         categories: List<Category>,
         monthlyIncome: Double,
         totalAmount: Double,
-        expenses: List<Expense>
+        expenses: List<Expense>,
+        period: String
     ): OverspendingAlert? {
         if (monthlyIncome > 0.0 && totalAmount > monthlyIncome) {
             return OverspendingAlert(
@@ -799,10 +1025,8 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
             .filterNot { it.isTransfer }
             .groupBy { it.category }
             .mapValues { (_, entries) -> entries.sumOf { it.amount } }
-        val currentMonth = YearMonth.from(LocalDate.now())
-        val currentPeriod = currentMonth.toString()
         val categoryBudgetsByCategory = _uiState.value.categoryBudgets
-            .filter { it.period == currentPeriod }
+            .filter { it.period == period }
             .associateBy { it.category }
         
         val overspentCategory = categories.firstOrNull { category ->
@@ -830,6 +1054,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
         paymentMethod: String,
         description: String,
         tags: List<String>,
+        currencyCode: String,
         splitRows: List<SplitExpenseInput>
     ): List<Expense> {
         val splitGroupId = UUID.randomUUID().toString()
@@ -839,6 +1064,7 @@ class ExpenseViewModel(application: Application) : AndroidViewModel(application)
                 id = UUID.randomUUID().toString(),
                 date = date,
                 amount = amount,
+                currencyCode = Currency.fromCode(currencyCode).code,
                 category = row.category,
                 subcategory = row.subcategory?.takeIf { it.isNotBlank() },
                 description = description,

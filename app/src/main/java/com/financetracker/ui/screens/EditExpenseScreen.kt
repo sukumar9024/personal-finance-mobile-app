@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.financetracker.data.model.Currency
 import com.financetracker.data.model.Expense
 import com.financetracker.ui.theme.SectionHeader
 import com.financetracker.ui.theme.Shapes
@@ -75,7 +76,6 @@ fun EditExpenseScreen(
     onNavigateBack: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val currency = uiState.currency
     val expense = uiState.expenses.find { it.id == expenseId }
 
     if (expense == null) {
@@ -121,15 +121,18 @@ fun EditExpenseScreen(
         }
         return
     }
+    val currency = Currency.fromCode(expense.currencyCode)
 
     var date by remember { mutableStateOf(expense.date) }
     var amount by remember { mutableStateOf(expense.amount.toString()) }
+    var selectedCurrency by remember { mutableStateOf(currency) }
     var selectedCategory by remember { mutableStateOf(expense.category) }
     var subcategory by remember { mutableStateOf(expense.subcategory ?: "") }
     var description by remember { mutableStateOf(expense.description) }
     var paymentMethod by remember { mutableStateOf(expense.paymentMethod) }
     var tags by remember { mutableStateOf(expense.tags.joinToString(", ")) }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var currencyExpanded by remember { mutableStateOf(false) }
     var paymentExpanded by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -215,6 +218,7 @@ fun EditExpenseScreen(
                                 val updatedExpense = expense.copy(
                                     date = date,
                                     amount = amountValue,
+                                    currencyCode = selectedCurrency.code,
                                     category = selectedCategory,
                                     subcategory = subcategory.takeIf { it.isNotBlank() },
                                     description = description,
@@ -273,7 +277,7 @@ fun EditExpenseScreen(
             AmountPreviewCard(
                 amount = amountValue,
                 date = date,
-                currency = currency,
+                currency = selectedCurrency,
                 onDateClick = { datePickerDialog.show() }
             )
 
@@ -287,7 +291,7 @@ fun EditExpenseScreen(
                     label = { Text("Amount") },
                     leadingIcon = {
                         Text(
-                            text = currency.symbol,
+                            text = selectedCurrency.symbol,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
@@ -298,6 +302,41 @@ fun EditExpenseScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = Shapes.medium
                 )
+
+                Spacer(modifier = Modifier.height(Spacing.md))
+
+                ExposedDropdownMenuBox(
+                    expanded = currencyExpanded,
+                    onExpandedChange = { currencyExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = "${selectedCurrency.code} (${selectedCurrency.symbol})",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Currency") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        shape = Shapes.medium
+                    )
+                    DropdownMenu(
+                        expanded = currencyExpanded,
+                        onDismissRequest = { currencyExpanded = false }
+                    ) {
+                        Currency.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text("${option.code} - ${option.displayName}") },
+                                onClick = {
+                                    selectedCurrency = option
+                                    currencyExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(Spacing.md))
 

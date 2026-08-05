@@ -69,6 +69,7 @@ import com.financetracker.ui.theme.formatCurrency
 import com.financetracker.ui.viewmodel.ExpenseViewModel
 import com.financetracker.ui.viewmodel.SplitExpenseInput
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 
@@ -88,10 +89,21 @@ fun AddExpenseScreen(
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     val currency = uiState.currency
+    val selectedMonth = runCatching {
+        YearMonth.parse(uiState.currentMonthSheet.removePrefix("expenses_").replace("_", "-"))
+    }.getOrDefault(YearMonth.now())
+    val defaultDate = LocalDate.now().let { today ->
+        if (YearMonth.from(today) == selectedMonth) {
+            today
+        } else {
+            selectedMonth.atDay(today.dayOfMonth.coerceAtMost(selectedMonth.lengthOfMonth()))
+        }
+    }
 
     var entryMode by remember { mutableStateOf(EntryMode.EXPENSE) }
-    var date by remember { mutableStateOf(LocalDate.now()) }
+    var date by remember { mutableStateOf(defaultDate) }
     var amount by remember { mutableStateOf("") }
+    var selectedCurrency by remember { mutableStateOf(currency) }
     var selectedCategory by remember { mutableStateOf("") }
     var subcategory by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -100,6 +112,7 @@ fun AddExpenseScreen(
     var transferDestination by remember { mutableStateOf("") }
     var tags by remember { mutableStateOf("") }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var currencyExpanded by remember { mutableStateOf(false) }
     var paymentExpanded by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
 
@@ -189,6 +202,7 @@ fun AddExpenseScreen(
                                             id = UUID.randomUUID().toString(),
                                             date = date,
                                             amount = amountValue,
+                                            currencyCode = selectedCurrency.code,
                                             category = selectedCategory,
                                             subcategory = subcategory.takeIf { it.isNotBlank() },
                                             description = description,
@@ -203,6 +217,7 @@ fun AddExpenseScreen(
                                             id = UUID.randomUUID().toString(),
                                             date = date,
                                             amount = amountValue,
+                                            currencyCode = selectedCurrency.code,
                                             category = "Transfer",
                                             description = description.ifBlank { "Transfer from $transferAccount to $transferDestination" },
                                             paymentMethod = transferAccount,
@@ -219,6 +234,7 @@ fun AddExpenseScreen(
                                             paymentMethod = paymentMethod,
                                             description = description,
                                             tags = tags.split(",").map { it.trim() }.filter { it.isNotBlank() },
+                                            currencyCode = selectedCurrency.code,
                                             splitRows = splitRows.filter { it.amount > 0 }
                                         )
                                         viewModel.addExpenseGroup(expenses)
@@ -308,7 +324,7 @@ fun AddExpenseScreen(
             AmountPreviewCard(
                 amount = amountValue,
                 date = date,
-                currency = currency,
+                currency = selectedCurrency,
                 onDateClick = { datePickerDialog.show() }
             )
 
@@ -322,7 +338,7 @@ fun AddExpenseScreen(
                     label = { Text("Amount") },
                     leadingIcon = {
                         Text(
-                            text = currency.symbol,
+                            text = selectedCurrency.symbol,
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.SemiBold
@@ -333,6 +349,41 @@ fun AddExpenseScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = Shapes.medium
                 )
+
+                Spacer(modifier = Modifier.height(Spacing.md))
+
+                ExposedDropdownMenuBox(
+                    expanded = currencyExpanded,
+                    onExpandedChange = { currencyExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = "${selectedCurrency.code} (${selectedCurrency.symbol})",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Currency") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        shape = Shapes.medium
+                    )
+                    DropdownMenu(
+                        expanded = currencyExpanded,
+                        onDismissRequest = { currencyExpanded = false }
+                    ) {
+                        Currency.entries.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text("${option.code} - ${option.displayName}") },
+                                onClick = {
+                                    selectedCurrency = option
+                                    currencyExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             // Mode-specific fields
