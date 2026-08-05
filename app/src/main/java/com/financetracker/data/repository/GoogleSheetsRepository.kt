@@ -373,8 +373,7 @@ class GoogleSheetsRepository(private val context: Context) {
                     title = item.optString("title"),
                     group = item.optString("group", "Overview"),
                     sortOrder = item.optInt("sortOrder", index),
-                    visible = item.optBoolean("visible", true),
-                    collapsed = item.optBoolean("collapsed", false)
+                    visible = item.optBoolean("visible", true)
                 )
             }.filter { it.id.isNotBlank() }
         }.getOrDefault(emptyList())
@@ -397,7 +396,6 @@ class GoogleSheetsRepository(private val context: Context) {
                             put("group", defaultsById.getValue(preference.id).group)
                             put("sortOrder", preference.sortOrder)
                             put("visible", preference.visible)
-                            put("collapsed", preference.collapsed)
                         }
                     )
                 }
@@ -409,18 +407,17 @@ class GoogleSheetsRepository(private val context: Context) {
     fun defaultDashboardCardPreferences(): List<DashboardCardPreference> {
         return listOf(
             DashboardCardPreference("monthly_overview", "Monthly Overview", "Overview", 0),
-            DashboardCardPreference("savings_dashboard", "Savings Dashboard", "Overview", 1),
-            DashboardCardPreference("operating_view", "Monthly Operating View", "Overview", 2),
-            DashboardCardPreference("spending_calendar", "Spending Calendar", "Calendar", 3),
-            DashboardCardPreference("multi_currency", "Multi-Currency Expenditure", "Data", 4),
-            DashboardCardPreference("exchange_conversion", "Exchange Conversion", "Data", 5),
-            DashboardCardPreference("net_worth", "Net Worth", "Goals", 6),
-            DashboardCardPreference("savings_goals", "Savings Goals", "Goals", 7),
-            DashboardCardPreference("month_data", "Month, Income & Data", "Data", 8),
-            DashboardCardPreference("quick_add", "Quick Add", "Overview", 9),
-            DashboardCardPreference("quick_actions", "Quick Actions", "Overview", 10),
-            DashboardCardPreference("top_categories", "Top Categories", "Overview", 11),
-            DashboardCardPreference("transactions", "Recent Transactions", "Data", 12)
+            DashboardCardPreference("operating_view", "Monthly Operating View", "Overview", 1),
+            DashboardCardPreference("spending_calendar", "Spending Calendar", "Calendar", 2),
+            DashboardCardPreference("multi_currency", "Multi-Currency Expenditure", "Data", 3),
+            DashboardCardPreference("exchange_conversion", "Exchange Conversion", "Data", 4),
+            DashboardCardPreference("net_worth", "Net Worth", "Goals", 5),
+            DashboardCardPreference("savings_goals", "Savings Goals", "Goals", 6),
+            DashboardCardPreference("month_data", "Month, Income & Data", "Data", 7),
+            DashboardCardPreference("quick_add", "Quick Add", "Overview", 8),
+            DashboardCardPreference("quick_actions", "Quick Actions", "Overview", 9),
+            DashboardCardPreference("top_categories", "Top Categories", "Overview", 10),
+            DashboardCardPreference("transactions", "Recent Transactions", "Data", 11)
         )
     }
 

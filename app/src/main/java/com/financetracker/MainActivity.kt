@@ -36,15 +36,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.fragment.app.FragmentActivity
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
 import com.financetracker.ui.navigation.FinanceNavHost
 import com.financetracker.ui.theme.FinanceTrackerTheme
 import com.financetracker.ui.theme.ThemeMode
 import com.financetracker.ui.viewmodel.ExpenseViewModel
-import com.financetracker.workmanager.RecurringReminderWorker
-import java.util.concurrent.TimeUnit
 
 class MainActivity : FragmentActivity() {
     private val viewModel: ExpenseViewModel by viewModels()
@@ -54,8 +49,6 @@ class MainActivity : FragmentActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
         ensureNotificationChannel()
-        RecurringReminderWorker.ensureReminderChannel(this)
-        scheduleRecurringReminderChecks()
 
         setContent {
             val uiState by viewModel.uiState.collectAsState()
@@ -93,15 +86,6 @@ class MainActivity : FragmentActivity() {
                         } else {
                             postOverspendingNotification(alert.title, alert.message)
                             viewModel.consumeOverspendingAlert()
-                        }
-                    }
-
-                    LaunchedEffect(uiState.recurringEntries.any { it.reminderEnabled }) {
-                        if (uiState.recurringEntries.any { it.reminderEnabled } &&
-                            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                            ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                     }
 
@@ -183,16 +167,6 @@ class MainActivity : FragmentActivity() {
             description = "Alerts when monthly or category budgets are exceeded."
         }
         manager.createNotificationChannel(channel)
-    }
-
-    private fun scheduleRecurringReminderChecks() {
-        val request = PeriodicWorkRequestBuilder<RecurringReminderWorker>(12, TimeUnit.HOURS)
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            RecurringReminderWorker.UNIQUE_WORK_NAME,
-            ExistingPeriodicWorkPolicy.UPDATE,
-            request
-        )
     }
 
     private fun postOverspendingNotification(title: String, message: String) {

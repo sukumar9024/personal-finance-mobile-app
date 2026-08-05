@@ -1,7 +1,7 @@
 package com.financetracker.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -314,7 +314,6 @@ item {
                     title = preference.title,
                     group = preference.group,
                     visible = preference.visible,
-                    collapsed = preference.collapsed,
                     canMoveUp = index > 0,
                     canMoveDown = index < uiState.dashboardCardPreferences.lastIndex,
                     onVisibleChange = { viewModel.setDashboardCardVisibility(preference.id, it) },
@@ -480,15 +479,15 @@ private fun SettingsSection(
     Column {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(Spacing.sm))
+        Spacer(modifier = Modifier.height(Spacing.md))
         content()
     }
 }
@@ -584,7 +583,6 @@ private fun DashboardCardPreferenceRow(
     title: String,
     group: String,
     visible: Boolean,
-    collapsed: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
     onVisibleChange: (Boolean) -> Unit,
@@ -597,10 +595,12 @@ private fun DashboardCardPreferenceRow(
         modifier = Modifier
             .fillMaxWidth()
             .pointerInput(canMoveUp, canMoveDown) {
-                detectVerticalDragGestures(
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { dragAmount = 0f },
                     onDragEnd = { dragAmount = 0f },
-                    onVerticalDrag = { _, dragDelta ->
-                        dragAmount += dragDelta
+                    onDragCancel = { dragAmount = 0f },
+                    onDrag = { _, dragDelta ->
+                        dragAmount += dragDelta.y
                         when {
                             dragAmount < -36f && canMoveUp -> {
                                 onMoveUp()
@@ -627,7 +627,7 @@ private fun DashboardCardPreferenceRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                 Text(
-                    text = "$group • ${if (visible) if (collapsed) "visible, collapsed" else "visible" else "hidden"}",
+                    text = "$group • ${if (visible) "visible" else "hidden"}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -60,22 +60,15 @@ import androidx.compose.ui.unit.sp
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
-import com.financetracker.data.model.RecurringEntry
-import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.isTransfer
 import com.financetracker.ui.theme.CardElevation
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Store
 import com.financetracker.ui.theme.CategoryColors
 import com.financetracker.data.model.CategoryRolloverSetting
 import com.financetracker.data.model.Currency
-import com.financetracker.data.model.DebtAccount
 import com.financetracker.ui.theme.IconCircle
-import com.financetracker.data.model.InvestmentHolding
 import com.financetracker.data.model.MonthlyCloseNote
-import com.financetracker.data.model.RecurringReminderOccurrence
-import com.financetracker.data.model.RecurringReminderStatus
 import com.financetracker.ui.theme.ScreenPadding
 import com.financetracker.ui.theme.SectionHeader
 import com.financetracker.ui.theme.Shapes
@@ -88,10 +81,9 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import androidx.compose.ui.text.style.TextOverflow
 import kotlin.math.max
 import kotlin.math.min
-import java.util.UUID
+import androidx.compose.ui.text.style.TextOverflow
 
 private enum class TimelineFilter(val label: String) {
     MONTHLY("Monthly"),
@@ -131,11 +123,6 @@ fun ReportsScreen(
     var editingIncomePeriod by rememberSaveable { mutableStateOf(currentPeriod.toString()) }
     var editingIncomeAmount by rememberSaveable { mutableStateOf("") }
     var showIncomeDialog by rememberSaveable { mutableStateOf(false) }
-    var showRecurringIncomeDialog by rememberSaveable { mutableStateOf(false) }
-    var recurringIncomeAmount by rememberSaveable { mutableStateOf("") }
-    var recurringIncomeDay by rememberSaveable { mutableStateOf("1") }
-    var recurringIncomeTitle by rememberSaveable { mutableStateOf("Monthly income") }
-    var editingRecurringEntryId by rememberSaveable { mutableStateOf<String?>(null) }
 
     val categoryOptions = listOf("All categories") + categories.map { it.name }
     if (selectedCategory !in categoryOptions) selectedCategory = "All categories"
@@ -268,12 +255,6 @@ fun ReportsScreen(
                     editingIncomePeriod = currentPeriod.toString()
                     editingIncomeAmount = uiState.monthlyIncome.toEditableAmount()
                     showIncomeDialog = true
-                },
-                onAddRecurringIncome = {
-                    recurringIncomeAmount = uiState.monthlyIncome.toEditableAmount()
-                    recurringIncomeDay = "1"
-                    recurringIncomeTitle = "Monthly income"
-                    showRecurringIncomeDialog = true
                 }
             )
 
@@ -288,7 +269,6 @@ fun ReportsScreen(
                 currentPeriod = currentPeriod,
                 monthlyIncome = uiState.monthlyIncome,
                 expenses = currentMonthExpenses,
-                recurringEntries = uiState.recurringEntries,
                 note = monthlyCloseNote,
                 onSaveNote = { viewModel.saveMonthlyCloseNote(currentPeriod.toString(), it) },
                 onExport = viewModel::exportData
@@ -296,34 +276,6 @@ fun ReportsScreen(
 
             TopMerchantsCard(
                 expenses = scopedExpenses.filter { !it.isTransfer }
-            )
-
-            RecurringPlansCard(
-                currentPeriod = currentPeriod,
-                recurringEntries = uiState.recurringEntries,
-                reminderOccurrences = uiState.recurringReminderOccurrences,
-                onToggleActive = { entry, active ->
-                    viewModel.toggleRecurringEntry(entry, active)
-                },
-                onEditEntry = { editingRecurringEntryId = it.id },
-                onDeleteEntry = viewModel::deleteRecurringEntry,
-                onReminderChange = viewModel::updateRecurringReminder,
-                onMarkPaid = { entry -> viewModel.markRecurringOccurrencePaid(entry, currentPeriod.toString()) },
-                onMarkSkipped = { entry -> viewModel.markRecurringOccurrenceSkipped(entry, currentPeriod.toString()) }
-            )
-
-            DebtPayoffTrackerCard(
-                debts = uiState.debtAccounts,
-                defaultCurrency = uiState.currency,
-                onSave = viewModel::addOrUpdateDebtAccount,
-                onDelete = viewModel::deleteDebtAccount
-            )
-
-            InvestmentTrackerCard(
-                holdings = uiState.investmentHoldings,
-                defaultCurrency = uiState.currency,
-                onSave = viewModel::addOrUpdateInvestmentHolding,
-                onDelete = viewModel::deleteInvestmentHolding
             )
         }
     }
@@ -370,74 +322,6 @@ fun ReportsScreen(
         )
     }
 
-    if (showRecurringIncomeDialog) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showRecurringIncomeDialog = false },
-            title = { Text("Add Recurring Income") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                    OutlinedTextField(
-                        value = recurringIncomeTitle,
-                        onValueChange = { recurringIncomeTitle = it },
-                        label = { Text("Title") },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = recurringIncomeAmount,
-                        onValueChange = { value ->
-                            recurringIncomeAmount = value.filter { it.isDigit() || it == '.' }
-                        },
-                        label = { Text("Income amount") },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = recurringIncomeDay,
-                        onValueChange = { value ->
-                            recurringIncomeDay = value.filter { it.isDigit() }.take(2)
-                        },
-                        label = { Text("Day of month") },
-                        singleLine = true
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val amount = recurringIncomeAmount.toDoubleOrNull()
-                        val day = recurringIncomeDay.toIntOrNull()
-                        if (amount != null && day != null) {
-                            viewModel.addRecurringIncome(recurringIncomeTitle, amount, day.coerceIn(1, 31))
-                        }
-                        showRecurringIncomeDialog = false
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRecurringIncomeDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    editingRecurringEntryId?.let { entryId ->
-        val entry = uiState.recurringEntries.firstOrNull { it.id == entryId }
-        if (entry != null) {
-            EditRecurringEntryDialog(
-                entry = entry,
-                categories = categories,
-                onSave = {
-                    viewModel.updateRecurringEntry(it)
-                    editingRecurringEntryId = null
-                },
-                onDismiss = { editingRecurringEntryId = null }
-            )
-        } else {
-            editingRecurringEntryId = null
-        }
-    }
 }
 
 @Composable
@@ -1074,7 +958,6 @@ private fun MonthlyCloseReviewCard(
     currentPeriod: YearMonth,
     monthlyIncome: Double,
     expenses: List<Expense>,
-    recurringEntries: List<RecurringEntry>,
     note: MonthlyCloseNote,
     onSaveNote: (String) -> Unit,
     onExport: () -> Unit
@@ -1134,11 +1017,13 @@ private fun MonthlyCloseReviewCard(
                     }
                 }
             }
-            Text(
-                text = "${recurringEntries.count { it.active }} recurring plans are active. ${if (monthlyIncome <= 0.0) "Monthly income is missing." else "Monthly income is set."}",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (monthlyIncome <= 0.0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (monthlyIncome <= 0.0) {
+                Text(
+                    text = "Monthly income is missing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             OutlinedTextField(
                 value = notes,
                 onValueChange = { notes = it },
@@ -1183,8 +1068,7 @@ private fun ComparisonMetric(
 private fun IncomeHistoryCard(
     incomeEntries: List<IncomeEntry>,
     onEditEntry: (IncomeEntry) -> Unit,
-    onAddEntry: () -> Unit,
-    onAddRecurringIncome: () -> Unit
+    onAddEntry: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1195,15 +1079,10 @@ private fun IncomeHistoryCard(
         Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
             SectionHeader(
                 title = "Income History",
-                subtitle = "Edit month-by-month income values and create recurring income"
+                subtitle = "Edit month-by-month income values"
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                Button(onClick = onAddEntry, modifier = Modifier.weight(1f), shape = Shapes.medium) {
-                    Text("Edit Month")
-                }
-                OutlinedButton(onClick = onAddRecurringIncome, modifier = Modifier.weight(1f), shape = Shapes.medium) {
-                    Text("Recurring Income")
-                }
+            Button(onClick = onAddEntry, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium) {
+                Text("Edit Month")
             }
             if (incomeEntries.isEmpty()) {
                 Text("No income history yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1224,7 +1103,7 @@ private fun IncomeHistoryCard(
                             Column {
                                 Text(entry.period, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    text = if (entry.recurringEntryId != null) "From recurring income" else "Manual value",
+                                    text = "Manual value",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1386,341 +1265,6 @@ private fun TopMerchantsCard(
             }
         }
     }
-}
-
-@Composable
-private fun RecurringPlansCard(
-    currentPeriod: YearMonth,
-    recurringEntries: List<RecurringEntry>,
-    reminderOccurrences: List<RecurringReminderOccurrence>,
-    onToggleActive: (RecurringEntry, Boolean) -> Unit,
-    onEditEntry: (RecurringEntry) -> Unit,
-    onDeleteEntry: (RecurringEntry) -> Unit,
-    onReminderChange: (RecurringEntry, Boolean, Int) -> Unit,
-    onMarkPaid: (RecurringEntry) -> Unit,
-    onMarkSkipped: (RecurringEntry) -> Unit
-) {
-    val occurrenceByEntry = reminderOccurrences.associateBy { "${it.entryId}|${it.period}" }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = Shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
-    ) {
-        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-            SectionHeader(
-                title = "Recurring Plans",
-                subtitle = "Monthly recurring expenses and income that auto-fill when due"
-            )
-            if (recurringEntries.isEmpty()) {
-                Text("No recurring plans yet. Create one from Add Expense or Income History.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                recurringEntries.forEach { entry ->
-                    val occurrenceStatus = occurrenceByEntry["${entry.id}|${currentPeriod}"]?.status
-                        ?: RecurringReminderStatus.PENDING
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = Shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(Spacing.md),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(entry.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    text = "${entry.type.name.lowercase().replaceFirstChar { it.uppercase() }} on day ${entry.dayOfMonth} • ${formatCurrency(entry.amount)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            androidx.compose.material3.Switch(
-                                checked = entry.active,
-                                onCheckedChange = { onToggleActive(entry, it) }
-                            )
-                            TextButton(onClick = { onEditEntry(entry) }) {
-                                Text("Edit")
-                            }
-                            IconButton(onClick = { onDeleteEntry(entry) }) {
-                                Icon(Icons.Default.Store, contentDescription = "Delete recurring entry")
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Reminder", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    "${entry.reminderDaysBefore} days before due day • ${occurrenceStatus.name.lowercase().replaceFirstChar { it.uppercase() }}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            IconButton(
-                                onClick = { onReminderChange(entry, entry.reminderEnabled, entry.reminderDaysBefore - 1) },
-                                enabled = entry.reminderDaysBefore > 0
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.TrendingDown, contentDescription = "Decrease reminder days")
-                            }
-                            Text(entry.reminderDaysBefore.toString(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                            IconButton(
-                                onClick = { onReminderChange(entry, entry.reminderEnabled, entry.reminderDaysBefore + 1) },
-                                enabled = entry.reminderDaysBefore < 14
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = "Increase reminder days")
-                            }
-                            androidx.compose.material3.Switch(
-                                checked = entry.reminderEnabled,
-                                onCheckedChange = { onReminderChange(entry, it, entry.reminderDaysBefore) }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
-                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                        ) {
-                            OutlinedButton(
-                                onClick = { onMarkPaid(entry) },
-                                modifier = Modifier.weight(1f),
-                                shape = Shapes.medium
-                            ) {
-                                Text(if (entry.type == RecurringType.INCOME) "Received" else "Paid")
-                            }
-                            OutlinedButton(
-                                onClick = { onMarkSkipped(entry) },
-                                modifier = Modifier.weight(1f),
-                                shape = Shapes.medium
-                            ) {
-                                Text("Skipped")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DebtPayoffTrackerCard(
-    debts: List<DebtAccount>,
-    defaultCurrency: Currency,
-    onSave: (DebtAccount) -> Unit,
-    onDelete: (String) -> Unit
-) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var balance by rememberSaveable { mutableStateOf("") }
-    var rate by rememberSaveable { mutableStateOf("") }
-    var payment by rememberSaveable { mutableStateOf("") }
-    var dueDay by rememberSaveable { mutableStateOf("1") }
-    var target by rememberSaveable { mutableStateOf(YearMonth.now().plusYears(1).toString()) }
-    val totalDebt = debts.sumOf { it.currentBalance }
-    val totalMinimum = debts.sumOf { it.minimumPayment }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = Shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
-    ) {
-        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-            SectionHeader(title = "Debt Payoff Tracker", subtitle = "Loans and credit cards with payoff progress")
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                MetricCard("Debt", formatCurrencyRounded(totalDebt, defaultCurrency), Modifier.weight(1f))
-                MetricCard("Min Pay", formatCurrencyRounded(totalMinimum, defaultCurrency), Modifier.weight(1f))
-                MetricCard("Accounts", debts.size.toString(), Modifier.weight(1f))
-            }
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Debt name") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(value = balance, onValueChange = { balance = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Balance") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-                OutlinedTextField(value = payment, onValueChange = { payment = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Min payment") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(value = rate, onValueChange = { rate = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Interest %") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-                OutlinedTextField(value = dueDay, onValueChange = { dueDay = it.filter(Char::isDigit).take(2) }, label = { Text("Due day") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-            }
-            OutlinedTextField(value = target, onValueChange = { target = it }, label = { Text("Target payoff month YYYY-MM") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
-            Button(
-                onClick = {
-                    onSave(
-                        DebtAccount(
-                            id = UUID.randomUUID().toString(),
-                            name = name,
-                            currentBalance = balance.toDoubleOrNull() ?: 0.0,
-                            interestRate = rate.toDoubleOrNull() ?: 0.0,
-                            minimumPayment = payment.toDoubleOrNull() ?: 0.0,
-                            dueDay = dueDay.toIntOrNull() ?: 1,
-                            targetPayoffPeriod = target,
-                            currencyCode = defaultCurrency.code
-                        )
-                    )
-                    name = ""
-                    balance = ""
-                    rate = ""
-                    payment = ""
-                },
-                enabled = name.isNotBlank() && balance.toDoubleOrNull() != null,
-                modifier = Modifier.fillMaxWidth(),
-                shape = Shapes.medium
-            ) { Text("Save Debt") }
-            debts.forEach { debt ->
-                val monthsLeft = if (debt.minimumPayment > 0.0) kotlin.math.ceil(debt.currentBalance / debt.minimumPayment).toInt() else 0
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(debt.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                        Text("Due day ${debt.dueDay} • estimated ${monthsLeft} months", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Text(formatCurrencyRounded(debt.currentBalance, Currency.fromCode(debt.currencyCode)), style = MaterialTheme.typography.labelLarge)
-                    IconButton(onClick = { onDelete(debt.id) }) { Icon(Icons.Default.Delete, contentDescription = "Delete debt") }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun InvestmentTrackerCard(
-    holdings: List<InvestmentHolding>,
-    defaultCurrency: Currency,
-    onSave: (InvestmentHolding) -> Unit,
-    onDelete: (String) -> Unit
-) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var assetType by rememberSaveable { mutableStateOf("Mutual Fund") }
-    var units by rememberSaveable { mutableStateOf("") }
-    var averageCost by rememberSaveable { mutableStateOf("") }
-    var currentValue by rememberSaveable { mutableStateOf("") }
-    var contribution by rememberSaveable { mutableStateOf("") }
-    val invested = holdings.sumOf { it.units * it.averageCost }
-    val current = holdings.sumOf { it.currentValue }
-    val gainLoss = current - invested
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = Shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
-    ) {
-        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
-            SectionHeader(title = "Investment Tracking", subtitle = "Manual investments without brokerage integration")
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                MetricCard("Invested", formatCurrencyRounded(invested, defaultCurrency), Modifier.weight(1f))
-                MetricCard("Value", formatCurrencyRounded(current, defaultCurrency), Modifier.weight(1f))
-                MetricCard("Gain/Loss", formatCurrencyRounded(gainLoss, defaultCurrency), Modifier.weight(1f))
-            }
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Investment name") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
-            OutlinedTextField(value = assetType, onValueChange = { assetType = it }, label = { Text("Asset type") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(value = units, onValueChange = { units = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Units") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-                OutlinedTextField(value = averageCost, onValueChange = { averageCost = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Avg cost") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(value = currentValue, onValueChange = { currentValue = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Current value") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-                OutlinedTextField(value = contribution, onValueChange = { contribution = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Monthly SIP") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
-            }
-            Button(
-                onClick = {
-                    onSave(
-                        InvestmentHolding(
-                            id = UUID.randomUUID().toString(),
-                            name = name,
-                            assetType = assetType,
-                            units = units.toDoubleOrNull() ?: 0.0,
-                            averageCost = averageCost.toDoubleOrNull() ?: 0.0,
-                            currentValue = currentValue.toDoubleOrNull() ?: 0.0,
-                            monthlyContribution = contribution.toDoubleOrNull() ?: 0.0,
-                            currencyCode = defaultCurrency.code
-                        )
-                    )
-                    name = ""
-                    currentValue = ""
-                },
-                enabled = name.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-                shape = Shapes.medium
-            ) { Text("Save Investment") }
-            holdings.groupBy { it.assetType }.forEach { (type, typedHoldings) ->
-                Text(type, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                typedHoldings.forEach { holding ->
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(holding.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                            Text("${holding.units} units • SIP ${formatCurrencyRounded(holding.monthlyContribution, Currency.fromCode(holding.currencyCode))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Text(formatCurrencyRounded(holding.currentValue, Currency.fromCode(holding.currencyCode)), style = MaterialTheme.typography.labelLarge)
-                        IconButton(onClick = { onDelete(holding.id) }) { Icon(Icons.Default.Delete, contentDescription = "Delete investment") }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EditRecurringEntryDialog(
-    entry: RecurringEntry,
-    categories: List<Category>,
-    onSave: (RecurringEntry) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var title by rememberSaveable(entry.id) { mutableStateOf(entry.title) }
-    var amount by rememberSaveable(entry.id) { mutableStateOf(entry.amount.toEditableAmount()) }
-    var day by rememberSaveable(entry.id) { mutableStateOf(entry.dayOfMonth.toString()) }
-    var category by rememberSaveable(entry.id) { mutableStateOf(entry.category.orEmpty()) }
-    var description by rememberSaveable(entry.id) { mutableStateOf(entry.description) }
-    var paymentMethod by rememberSaveable(entry.id) { mutableStateOf(entry.paymentMethod) }
-    var active by rememberSaveable(entry.id) { mutableStateOf(entry.active) }
-
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Edit Recurring Entry") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
-                OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Title") }, singleLine = true)
-                OutlinedTextField(value = amount, onValueChange = { amount = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Amount") }, singleLine = true)
-                OutlinedTextField(value = day, onValueChange = { day = it.filter(Char::isDigit).take(2) }, label = { Text("Day of month") }, singleLine = true)
-                if (entry.type == RecurringType.EXPENSE) {
-                    TrendDropdown(
-                        label = "Category",
-                        selectedValue = category.ifBlank { "Other" },
-                        options = categories.map { it.name }.ifEmpty { listOf("Other") },
-                        onOptionSelected = { category = it }
-                    )
-                    OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") })
-                    OutlinedTextField(value = paymentMethod, onValueChange = { paymentMethod = it }, label = { Text("Payment method") }, singleLine = true)
-                }
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("Active", style = MaterialTheme.typography.labelLarge)
-                    androidx.compose.material3.Switch(checked = active, onCheckedChange = { active = it })
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onSave(
-                        entry.copy(
-                            title = title.ifBlank { entry.title },
-                            amount = amount.toDoubleOrNull() ?: entry.amount,
-                            dayOfMonth = day.toIntOrNull()?.coerceIn(1, 31) ?: entry.dayOfMonth,
-                            category = category.ifBlank { entry.category },
-                            description = description,
-                            paymentMethod = paymentMethod.ifBlank { "Cash" },
-                            active = active
-                        )
-                    )
-                }
-            ) {
-                Text("Save")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        }
-    )
 }
 
 private data class MonthComparison(

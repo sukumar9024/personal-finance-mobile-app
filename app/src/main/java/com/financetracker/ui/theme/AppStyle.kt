@@ -72,15 +72,15 @@ object Spacing {
     val xxs = 2.dp
     val xs = 4.dp
     val sm = 8.dp
-    val md = 12.dp
-    val lg = 16.dp
-    val xl = 20.dp
-    val xxl = 24.dp
-    val xxxl = 32.dp
+    val md = 10.dp
+    val lg = 14.dp
+    val xl = 18.dp
+    val xxl = 22.dp
+    val xxxl = 28.dp
 }
 
 // Component Constants
-val ScreenPadding = 16.dp
+val ScreenPadding = 14.dp
 val CardElevation = 1.dp
 val CardBorderWidth = 1.dp
 

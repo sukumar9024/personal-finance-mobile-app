@@ -5,8 +5,7 @@ data class DashboardCardPreference(
     val title: String,
     val group: String = "Overview",
     val sortOrder: Int = 0,
-    val visible: Boolean = true,
-    val collapsed: Boolean = false
+    val visible: Boolean = true
 )
 
 enum class RecurringReminderStatus {
