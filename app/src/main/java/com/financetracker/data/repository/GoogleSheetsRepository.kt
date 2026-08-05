@@ -7,10 +7,18 @@ import com.financetracker.BuildConfig
 import com.financetracker.data.model.AccountBalance
 import com.financetracker.data.model.Category
 import com.financetracker.data.model.CategoryBudget
+import com.financetracker.data.model.CategoryRolloverSetting
+import com.financetracker.data.model.CsvImportMapping
 import com.financetracker.data.model.Currency
+import com.financetracker.data.model.DashboardCardPreference
+import com.financetracker.data.model.DebtAccount
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.IncomeEntry
+import com.financetracker.data.model.InvestmentHolding
+import com.financetracker.data.model.MonthlyCloseNote
 import com.financetracker.data.model.RecurringEntry
+import com.financetracker.data.model.RecurringReminderOccurrence
+import com.financetracker.data.model.RecurringReminderStatus
 import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.SavingsGoal
 import com.financetracker.data.model.TransactionType
@@ -35,9 +43,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import org.apache.commons.csv.CSVFormat
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.InputStream
+import java.io.StringReader
 import java.nio.charset.StandardCharsets
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -66,6 +76,13 @@ class GoogleSheetsRepository(private val context: Context) {
         private const val EXCHANGE_RATES_KEY = "exchange_rates"
         private const val EXCHANGE_CONVERSION_ENABLED_KEY = "exchange_conversion_enabled"
         private const val BIOMETRIC_LOCK_ENABLED_KEY = "biometric_lock_enabled"
+        private const val DASHBOARD_CARD_PREFS_KEY = "dashboard_card_preferences"
+        private const val CATEGORY_ROLLOVER_KEY = "category_rollover_settings"
+        private const val MONTHLY_CLOSE_NOTES_KEY = "monthly_close_notes"
+        private const val CSV_MAPPING_KEY = "csv_import_mapping"
+        private const val DEBT_ACCOUNTS_KEY = "debt_accounts"
+        private const val INVESTMENT_HOLDINGS_KEY = "investment_holdings"
+        private const val RECURRING_REMINDER_OCCURRENCES_KEY = "recurring_reminder_occurrences"
         private val EXPENSE_SHEET_REGEX = Regex("""expenses_\d{4}_\d{2}""")
 
         private val DEFAULT_CATEGORIES = listOf(
@@ -345,6 +362,313 @@ class GoogleSheetsRepository(private val context: Context) {
         prefs.edit().putBoolean(BIOMETRIC_LOCK_ENABLED_KEY, enabled).apply()
     }
 
+    fun loadDashboardCardPreferences(): List<DashboardCardPreference> {
+        val rawJson = prefs.getString(DASHBOARD_CARD_PREFS_KEY, null) ?: return defaultDashboardCardPreferences()
+        val saved = runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                DashboardCardPreference(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                    group = item.optString("group", "Overview"),
+                    sortOrder = item.optInt("sortOrder", index),
+                    visible = item.optBoolean("visible", true),
+                    collapsed = item.optBoolean("collapsed", false)
+                )
+            }.filter { it.id.isNotBlank() }
+        }.getOrDefault(emptyList())
+
+        val savedById = saved.associateBy { it.id }
+        return defaultDashboardCardPreferences().map { default ->
+            savedById[default.id]?.copy(title = default.title, group = default.group) ?: default
+        }.sortedBy { it.sortOrder }
+    }
+
+    fun saveDashboardCardPreferences(preferences: List<DashboardCardPreference>) {
+        val defaultsById = defaultDashboardCardPreferences().associateBy { it.id }
+        val json = JSONArray().apply {
+            preferences.forEach { preference ->
+                if (preference.id in defaultsById) {
+                    put(
+                        JSONObject().apply {
+                            put("id", preference.id)
+                            put("title", defaultsById.getValue(preference.id).title)
+                            put("group", defaultsById.getValue(preference.id).group)
+                            put("sortOrder", preference.sortOrder)
+                            put("visible", preference.visible)
+                            put("collapsed", preference.collapsed)
+                        }
+                    )
+                }
+            }
+        }
+        prefs.edit().putString(DASHBOARD_CARD_PREFS_KEY, json.toString()).apply()
+    }
+
+    fun defaultDashboardCardPreferences(): List<DashboardCardPreference> {
+        return listOf(
+            DashboardCardPreference("monthly_overview", "Monthly Overview", "Overview", 0),
+            DashboardCardPreference("savings_dashboard", "Savings Dashboard", "Overview", 1),
+            DashboardCardPreference("operating_view", "Monthly Operating View", "Overview", 2),
+            DashboardCardPreference("spending_calendar", "Spending Calendar", "Calendar", 3),
+            DashboardCardPreference("multi_currency", "Multi-Currency Expenditure", "Data", 4),
+            DashboardCardPreference("exchange_conversion", "Exchange Conversion", "Data", 5),
+            DashboardCardPreference("net_worth", "Net Worth", "Goals", 6),
+            DashboardCardPreference("savings_goals", "Savings Goals", "Goals", 7),
+            DashboardCardPreference("month_data", "Month, Income & Data", "Data", 8),
+            DashboardCardPreference("quick_add", "Quick Add", "Overview", 9),
+            DashboardCardPreference("quick_actions", "Quick Actions", "Overview", 10),
+            DashboardCardPreference("top_categories", "Top Categories", "Overview", 11),
+            DashboardCardPreference("transactions", "Recent Transactions", "Data", 12)
+        )
+    }
+
+    fun loadCategoryRolloverSettings(): List<CategoryRolloverSetting> {
+        val rawJson = prefs.getString(CATEGORY_ROLLOVER_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                CategoryRolloverSetting(
+                    category = item.optString("category"),
+                    enabled = item.optBoolean("enabled", false),
+                    carryOverspend = item.optBoolean("carryOverspend", true)
+                )
+            }.filter { it.category.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveCategoryRolloverSettings(settings: List<CategoryRolloverSetting>) {
+        val json = JSONArray().apply {
+            settings.forEach { setting ->
+                put(
+                    JSONObject().apply {
+                        put("category", setting.category)
+                        put("enabled", setting.enabled)
+                        put("carryOverspend", setting.carryOverspend)
+                    }
+                )
+            }
+        }
+        prefs.edit().putString(CATEGORY_ROLLOVER_KEY, json.toString()).apply()
+    }
+
+    fun loadMonthlyCloseNotes(): List<MonthlyCloseNote> {
+        val rawJson = prefs.getString(MONTHLY_CLOSE_NOTES_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                MonthlyCloseNote(
+                    period = item.optString("period"),
+                    notes = item.optString("notes")
+                )
+            }.filter { it.period.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveMonthlyCloseNote(note: MonthlyCloseNote) {
+        val notes = (loadMonthlyCloseNotes().filterNot { it.period == note.period } + note)
+            .sortedByDescending { it.period }
+        val json = JSONArray().apply {
+            notes.forEach { item ->
+                put(JSONObject().apply {
+                    put("period", item.period)
+                    put("notes", item.notes)
+                })
+            }
+        }
+        prefs.edit().putString(MONTHLY_CLOSE_NOTES_KEY, json.toString()).apply()
+    }
+
+    fun loadCsvImportMapping(): CsvImportMapping {
+        val rawJson = prefs.getString(CSV_MAPPING_KEY, null) ?: return CsvImportMapping(name = "Default")
+        return runCatching {
+            val item = JSONObject(rawJson)
+            CsvImportMapping(
+                name = item.optString("name", "Default"),
+                dateColumn = item.optString("dateColumn", "Date"),
+                amountColumn = item.optString("amountColumn", "Amount"),
+                descriptionColumn = item.optString("descriptionColumn", "Description"),
+                categoryColumn = item.optString("categoryColumn", "Category"),
+                accountColumn = item.optString("accountColumn", "Account"),
+                currencyColumn = item.optString("currencyColumn", "Currency")
+            )
+        }.getOrDefault(CsvImportMapping(name = "Default"))
+    }
+
+    fun saveCsvImportMapping(mapping: CsvImportMapping) {
+        val json = JSONObject().apply {
+            put("name", mapping.name.ifBlank { "Default" })
+            put("dateColumn", mapping.dateColumn)
+            put("amountColumn", mapping.amountColumn)
+            put("descriptionColumn", mapping.descriptionColumn)
+            put("categoryColumn", mapping.categoryColumn)
+            put("accountColumn", mapping.accountColumn)
+            put("currencyColumn", mapping.currencyColumn)
+        }
+        prefs.edit().putString(CSV_MAPPING_KEY, json.toString()).apply()
+    }
+
+    fun parseCsvExpenses(
+        csvText: String,
+        mapping: CsvImportMapping,
+        defaultCategory: String,
+        defaultAccount: String,
+        defaultCurrency: Currency
+    ): List<Expense> {
+        if (csvText.isBlank()) return emptyList()
+        return runCatching {
+            CSVFormat.DEFAULT.builder()
+                .setHeader()
+                .setSkipHeaderRecord(true)
+                .setIgnoreSurroundingSpaces(true)
+                .build()
+                .parse(StringReader(csvText))
+                .mapNotNull { row ->
+                    val date = row.find(mapping.dateColumn)
+                        ?.let { parseFlexibleDate(it) }
+                        ?: return@mapNotNull null
+                    val amount = row.find(mapping.amountColumn)
+                        ?.replace(",", "")
+                        ?.toDoubleOrNull()
+                        ?.let { kotlin.math.abs(it) }
+                        ?: return@mapNotNull null
+                    if (amount <= 0.0) return@mapNotNull null
+
+                    Expense(
+                        date = date,
+                        amount = amount,
+                        category = row.find(mapping.categoryColumn)?.ifBlank { null } ?: defaultCategory,
+                        description = row.find(mapping.descriptionColumn).orEmpty(),
+                        paymentMethod = row.find(mapping.accountColumn)?.ifBlank { null } ?: defaultAccount,
+                        currencyCode = row.find(mapping.currencyColumn)
+                            ?.ifBlank { null }
+                            ?.let { Currency.fromCode(it.uppercase(Locale.US)).code }
+                            ?: defaultCurrency.code
+                    )
+                }
+        }.getOrDefault(emptyList())
+    }
+
+    fun loadDebtAccounts(): List<DebtAccount> {
+        val rawJson = prefs.getString(DEBT_ACCOUNTS_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                DebtAccount(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    currentBalance = item.optDouble("currentBalance"),
+                    interestRate = item.optDouble("interestRate"),
+                    minimumPayment = item.optDouble("minimumPayment"),
+                    dueDay = item.optInt("dueDay", 1).coerceIn(1, 31),
+                    targetPayoffPeriod = item.optString("targetPayoffPeriod"),
+                    currencyCode = Currency.fromCode(item.optString("currencyCode", Currency.getDefault().code)).code,
+                    paymentHistory = item.optJSONArray("paymentHistory").toDoubleList()
+                )
+            }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveDebtAccounts(debts: List<DebtAccount>) {
+        val json = JSONArray().apply {
+            debts.forEach { debt ->
+                put(
+                    JSONObject().apply {
+                        put("id", debt.id)
+                        put("name", debt.name)
+                        put("currentBalance", debt.currentBalance)
+                        put("interestRate", debt.interestRate)
+                        put("minimumPayment", debt.minimumPayment)
+                        put("dueDay", debt.dueDay)
+                        put("targetPayoffPeriod", debt.targetPayoffPeriod)
+                        put("currencyCode", Currency.fromCode(debt.currencyCode).code)
+                        put("paymentHistory", JSONArray().apply { debt.paymentHistory.forEach(::put) })
+                    }
+                )
+            }
+        }
+        prefs.edit().putString(DEBT_ACCOUNTS_KEY, json.toString()).apply()
+    }
+
+    fun loadInvestmentHoldings(): List<InvestmentHolding> {
+        val rawJson = prefs.getString(INVESTMENT_HOLDINGS_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                InvestmentHolding(
+                    id = item.optString("id"),
+                    name = item.optString("name"),
+                    assetType = item.optString("assetType"),
+                    units = item.optDouble("units"),
+                    averageCost = item.optDouble("averageCost"),
+                    currentValue = item.optDouble("currentValue"),
+                    monthlyContribution = item.optDouble("monthlyContribution"),
+                    currencyCode = Currency.fromCode(item.optString("currencyCode", Currency.getDefault().code)).code
+                )
+            }.filter { it.id.isNotBlank() && it.name.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveInvestmentHoldings(holdings: List<InvestmentHolding>) {
+        val json = JSONArray().apply {
+            holdings.forEach { holding ->
+                put(
+                    JSONObject().apply {
+                        put("id", holding.id)
+                        put("name", holding.name)
+                        put("assetType", holding.assetType)
+                        put("units", holding.units)
+                        put("averageCost", holding.averageCost)
+                        put("currentValue", holding.currentValue)
+                        put("monthlyContribution", holding.monthlyContribution)
+                        put("currencyCode", Currency.fromCode(holding.currencyCode).code)
+                    }
+                )
+            }
+        }
+        prefs.edit().putString(INVESTMENT_HOLDINGS_KEY, json.toString()).apply()
+    }
+
+    fun loadRecurringReminderOccurrences(): List<RecurringReminderOccurrence> {
+        val rawJson = prefs.getString(RECURRING_REMINDER_OCCURRENCES_KEY, null) ?: return emptyList()
+        return runCatching {
+            val jsonArray = JSONArray(rawJson)
+            List(jsonArray.length()) { index ->
+                val item = jsonArray.getJSONObject(index)
+                RecurringReminderOccurrence(
+                    entryId = item.optString("entryId"),
+                    period = item.optString("period"),
+                    status = runCatching {
+                        RecurringReminderStatus.valueOf(item.optString("status", RecurringReminderStatus.PENDING.name))
+                    }.getOrDefault(RecurringReminderStatus.PENDING)
+                )
+            }.filter { it.entryId.isNotBlank() && it.period.isNotBlank() }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveRecurringReminderOccurrence(occurrence: RecurringReminderOccurrence) {
+        val updated = (loadRecurringReminderOccurrences().filterNot {
+            it.entryId == occurrence.entryId && it.period == occurrence.period
+        } + occurrence).sortedWith(compareByDescending<RecurringReminderOccurrence> { it.period }.thenBy { it.entryId })
+        val json = JSONArray().apply {
+            updated.forEach { item ->
+                put(
+                    JSONObject().apply {
+                        put("entryId", item.entryId)
+                        put("period", item.period)
+                        put("status", item.status.name)
+                    }
+                )
+            }
+        }
+        prefs.edit().putString(RECURRING_REMINDER_OCCURRENCES_KEY, json.toString()).apply()
+    }
+
     fun exportTransactionsCsv(expenses: List<Expense>, incomeEntries: List<IncomeEntry>): String {
         val exportDir = getExportDir()
         val file = File(exportDir, "finance_export_${System.currentTimeMillis()}.csv")
@@ -438,6 +762,13 @@ class GoogleSheetsRepository(private val context: Context) {
             put("transactionTemplates", prefs.getString(TRANSACTION_TEMPLATES_KEY, null))
             put("savingsGoals", prefs.getString(SAVINGS_GOALS_KEY, null))
             put("exchangeRates", prefs.getString(EXCHANGE_RATES_KEY, null))
+            put("dashboardCardPreferences", prefs.getString(DASHBOARD_CARD_PREFS_KEY, null))
+            put("categoryRolloverSettings", prefs.getString(CATEGORY_ROLLOVER_KEY, null))
+            put("monthlyCloseNotes", prefs.getString(MONTHLY_CLOSE_NOTES_KEY, null))
+            put("csvImportMapping", prefs.getString(CSV_MAPPING_KEY, null))
+            put("debtAccounts", prefs.getString(DEBT_ACCOUNTS_KEY, null))
+            put("investmentHoldings", prefs.getString(INVESTMENT_HOLDINGS_KEY, null))
+            put("recurringReminderOccurrences", prefs.getString(RECURRING_REMINDER_OCCURRENCES_KEY, null))
             put("includeTransfersInReports", loadIncludeTransfersInReports())
             put("exchangeConversionEnabled", loadExchangeConversionEnabled())
             put("biometricLockEnabled", loadBiometricLockEnabled())
@@ -471,6 +802,27 @@ class GoogleSheetsRepository(private val context: Context) {
                 }
                 backupJson.optString("exchangeRates").takeIf { it.isNotBlank() && it != "null" }?.let {
                     putString(EXCHANGE_RATES_KEY, it)
+                }
+                backupJson.optString("dashboardCardPreferences").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(DASHBOARD_CARD_PREFS_KEY, it)
+                }
+                backupJson.optString("categoryRolloverSettings").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(CATEGORY_ROLLOVER_KEY, it)
+                }
+                backupJson.optString("monthlyCloseNotes").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(MONTHLY_CLOSE_NOTES_KEY, it)
+                }
+                backupJson.optString("csvImportMapping").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(CSV_MAPPING_KEY, it)
+                }
+                backupJson.optString("debtAccounts").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(DEBT_ACCOUNTS_KEY, it)
+                }
+                backupJson.optString("investmentHoldings").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(INVESTMENT_HOLDINGS_KEY, it)
+                }
+                backupJson.optString("recurringReminderOccurrences").takeIf { it.isNotBlank() && it != "null" }?.let {
+                    putString(RECURRING_REMINDER_OCCURRENCES_KEY, it)
                 }
                 putBoolean(INCLUDE_TRANSFERS_KEY, backupJson.optBoolean("includeTransfersInReports", false))
                 putBoolean(EXCHANGE_CONVERSION_ENABLED_KEY, backupJson.optBoolean("exchangeConversionEnabled", false))
@@ -1073,6 +1425,69 @@ class GoogleSheetsRepository(private val context: Context) {
         ).execute()
 
         true
+    }
+
+    suspend fun markRecurringOccurrencePaid(entryId: String, period: String): Boolean = withContext(Dispatchers.IO) {
+        val normalizedPeriod = normalizePeriod(period)
+        val cachedData = loadCachedData()
+        val entry = cachedData?.recurringEntries?.firstOrNull { it.id == entryId } ?: return@withContext false
+        val month = runCatching { YearMonth.parse(normalizedPeriod) }.getOrDefault(YearMonth.now())
+        val occurrence = RecurringReminderOccurrence(entryId, normalizedPeriod, RecurringReminderStatus.PAID)
+
+        if (isReadyForLiveSync()) {
+            val service = getSheetsService() ?: return@withContext false
+            when (entry.type) {
+                RecurringType.EXPENSE -> {
+                    val sheetName = getSheetNameForPeriod(normalizedPeriod)
+                    val existing = fetchAllExpenses()
+                    val alreadyExists = existing.any { it.recurringEntryId == entry.id && it.occurrencePeriod == normalizedPeriod }
+                    if (!alreadyExists) {
+                        appendExpenseRow(
+                            service = service,
+                            sheetName = sheetName,
+                            expense = entry.toExpense(month, normalizedPeriod)
+                        )
+                    }
+                }
+
+                RecurringType.INCOME -> {
+                    upsertMonthlyIncome(service, normalizedPeriod, entry.amount, entry.id)
+                }
+            }
+            saveRecurringReminderOccurrence(occurrence)
+            return@withContext true
+        }
+
+        when (entry.type) {
+            RecurringType.EXPENSE -> {
+                val expense = entry.toExpense(month, normalizedPeriod)
+                val updatedReportExpenses = (cachedData.reportExpenses.ifEmpty { cachedData.expenses })
+                    .filterNot { it.recurringEntryId == entry.id && it.occurrencePeriod == normalizedPeriod } + expense
+                val selectedExpenses = updatedReportExpenses.filter {
+                    YearMonth.from(it.date).toString() == periodFromSheet(cachedData.currentMonthSheet)
+                }
+                saveCachedData(
+                    cachedData.copy(
+                        expenses = selectedExpenses,
+                        reportExpenses = updatedReportExpenses
+                    )
+                )
+            }
+
+            RecurringType.INCOME -> {
+                val updatedIncome = cachedData.incomeEntries.filterNot { it.period == normalizedPeriod } +
+                    IncomeEntry(normalizedPeriod, entry.amount, entry.id)
+                saveCachedData(cachedData.copy(incomeEntries = updatedIncome))
+            }
+        }
+        saveRecurringReminderOccurrence(occurrence)
+        true
+    }
+
+    fun markRecurringOccurrenceSkipped(entryId: String, period: String) {
+        saveRecurringReminderOccurrence(
+            RecurringReminderOccurrence(entryId, normalizePeriod(period), RecurringReminderStatus.SKIPPED)
+        )
     }
 
     suspend fun applyRecurringEntries(
@@ -1722,6 +2137,18 @@ class GoogleSheetsRepository(private val context: Context) {
         )
     }
 
+    private fun RecurringEntry.toExpense(month: YearMonth, period: String): Expense {
+        return Expense(
+            date = month.atDay(dayOfMonth.coerceIn(1, month.lengthOfMonth())),
+            amount = amount,
+            category = category ?: "Other",
+            description = description.ifBlank { title },
+            paymentMethod = paymentMethod,
+            recurringEntryId = id,
+            occurrencePeriod = period
+        )
+    }
+
     private fun Expense.toJson(): JSONObject {
         return JSONObject().apply {
             put("id", id)
@@ -1774,6 +2201,8 @@ class GoogleSheetsRepository(private val context: Context) {
             put("description", description)
             put("paymentMethod", paymentMethod)
             put("active", active)
+            put("reminderEnabled", reminderEnabled)
+            put("reminderDaysBefore", reminderDaysBefore)
             put("sheetRowIndex", sheetRowIndex)
         }
     }
@@ -1801,6 +2230,11 @@ class GoogleSheetsRepository(private val context: Context) {
     private fun JSONArray?.toCategoryBudgetList(): List<CategoryBudget> {
         if (this == null) return emptyList()
         return List(length()) { index -> getJSONObject(index).toCategoryBudget() }
+    }
+
+    private fun JSONArray?.toDoubleList(): List<Double> {
+        if (this == null) return emptyList()
+        return List(length()) { index -> optDouble(index) }
     }
 
     private fun JSONObject.toExpense(): Expense {
@@ -1858,6 +2292,8 @@ class GoogleSheetsRepository(private val context: Context) {
             description = optString("description"),
             paymentMethod = optString("paymentMethod", "Cash"),
             active = optBoolean("active", true),
+            reminderEnabled = optBoolean("reminderEnabled", false),
+            reminderDaysBefore = optInt("reminderDaysBefore", 1).coerceIn(0, 14),
             sheetRowIndex = optInt("sheetRowIndex", -1)
         )
     }
@@ -1902,6 +2338,25 @@ class GoogleSheetsRepository(private val context: Context) {
         return runCatching { LocalDate.parse(value) }.getOrDefault(LocalDate.now())
     }
 
+    private fun parseFlexibleDate(value: String): LocalDate? {
+        val trimmed = value.trim()
+        if (trimmed.isBlank()) return null
+        val patterns = listOf(
+            "yyyy-MM-dd",
+            "dd-MM-yyyy",
+            "MM-dd-yyyy",
+            "dd/MM/yyyy",
+            "MM/dd/yyyy",
+            "dd MMM yyyy",
+            "MMM dd yyyy"
+        )
+        return patterns.firstNotNullOfOrNull { pattern ->
+            runCatching {
+                LocalDate.parse(trimmed, java.time.format.DateTimeFormatter.ofPattern(pattern, Locale.US))
+            }.getOrNull()
+        }
+    }
+
     private fun parseDateTime(value: String): LocalDateTime {
         return runCatching { LocalDateTime.parse(value) }.getOrDefault(LocalDateTime.now())
     }
@@ -1924,6 +2379,10 @@ class GoogleSheetsRepository(private val context: Context) {
                 escaped
             }
         }
+    }
+
+    private fun org.apache.commons.csv.CSVRecord.find(columnName: String): String? {
+        return runCatching { get(columnName) }.getOrNull()
     }
 
     private fun periodFromSheet(sheetName: String): String {

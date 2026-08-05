@@ -65,10 +65,17 @@ import com.financetracker.data.model.RecurringType
 import com.financetracker.data.model.isTransfer
 import com.financetracker.ui.theme.CardElevation
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Store
 import com.financetracker.ui.theme.CategoryColors
+import com.financetracker.data.model.CategoryRolloverSetting
 import com.financetracker.data.model.Currency
+import com.financetracker.data.model.DebtAccount
 import com.financetracker.ui.theme.IconCircle
+import com.financetracker.data.model.InvestmentHolding
+import com.financetracker.data.model.MonthlyCloseNote
+import com.financetracker.data.model.RecurringReminderOccurrence
+import com.financetracker.data.model.RecurringReminderStatus
 import com.financetracker.ui.theme.ScreenPadding
 import com.financetracker.ui.theme.SectionHeader
 import com.financetracker.ui.theme.Shapes
@@ -84,6 +91,7 @@ import java.util.Locale
 import androidx.compose.ui.text.style.TextOverflow
 import kotlin.math.max
 import kotlin.math.min
+import java.util.UUID
 
 private enum class TimelineFilter(val label: String) {
     MONTHLY("Monthly"),
@@ -177,6 +185,15 @@ fun ReportsScreen(
     val spendingSlices = buildSpendingSlices(categoryTotals, categories, totalIncome, remainingAmount)
     val monthComparison = buildMonthComparison(uiState.reportExpenses, uiState.incomeEntries, currentPeriod)
     val incomeHistory = uiState.incomeEntries.sortedByDescending { it.period }.take(12)
+    val spendingInsights = buildSpendingInsights(
+        expenses = reportExpenses,
+        incomeEntries = uiState.incomeEntries,
+        categoryBudgets = uiState.categoryBudgets,
+        currentPeriod = currentPeriod,
+        currentMonthlyIncome = uiState.monthlyIncome
+    )
+    val monthlyCloseNote = uiState.monthlyCloseNotes.firstOrNull { it.period == currentPeriod.toString() }
+        ?: MonthlyCloseNote(currentPeriod.toString())
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -227,13 +244,18 @@ fun ReportsScreen(
                 expenses = currentMonthExpenses,
                 monthlyIncome = uiState.monthlyIncome,
                 categoryBudgets = uiState.categoryBudgets,
-                currentPeriod = currentPeriod
+                currentPeriod = currentPeriod,
+                rolloverSettings = uiState.categoryRolloverSettings,
+                allExpenses = reportExpenses,
+                onRolloverChange = viewModel::setCategoryRollover
             )
 
             MonthComparisonCard(
                 currentPeriod = currentPeriod,
                 comparison = monthComparison
             )
+
+            SpendingInsightsCard(spendingInsights)
 
             IncomeHistoryCard(
                 incomeEntries = incomeHistory,
@@ -262,17 +284,46 @@ fun ReportsScreen(
                 remainingDays = currentPeriod.atEndOfMonth().dayOfMonth - LocalDate.now().dayOfMonth
             )
 
+            MonthlyCloseReviewCard(
+                currentPeriod = currentPeriod,
+                monthlyIncome = uiState.monthlyIncome,
+                expenses = currentMonthExpenses,
+                recurringEntries = uiState.recurringEntries,
+                note = monthlyCloseNote,
+                onSaveNote = { viewModel.saveMonthlyCloseNote(currentPeriod.toString(), it) },
+                onExport = viewModel::exportData
+            )
+
             TopMerchantsCard(
                 expenses = scopedExpenses.filter { !it.isTransfer }
             )
 
             RecurringPlansCard(
+                currentPeriod = currentPeriod,
                 recurringEntries = uiState.recurringEntries,
+                reminderOccurrences = uiState.recurringReminderOccurrences,
                 onToggleActive = { entry, active ->
                     viewModel.toggleRecurringEntry(entry, active)
                 },
                 onEditEntry = { editingRecurringEntryId = it.id },
-                onDeleteEntry = viewModel::deleteRecurringEntry
+                onDeleteEntry = viewModel::deleteRecurringEntry,
+                onReminderChange = viewModel::updateRecurringReminder,
+                onMarkPaid = { entry -> viewModel.markRecurringOccurrencePaid(entry, currentPeriod.toString()) },
+                onMarkSkipped = { entry -> viewModel.markRecurringOccurrenceSkipped(entry, currentPeriod.toString()) }
+            )
+
+            DebtPayoffTrackerCard(
+                debts = uiState.debtAccounts,
+                defaultCurrency = uiState.currency,
+                onSave = viewModel::addOrUpdateDebtAccount,
+                onDelete = viewModel::deleteDebtAccount
+            )
+
+            InvestmentTrackerCard(
+                holdings = uiState.investmentHoldings,
+                defaultCurrency = uiState.currency,
+                onSave = viewModel::addOrUpdateInvestmentHolding,
+                onDelete = viewModel::deleteInvestmentHolding
             )
         }
     }
@@ -867,12 +918,22 @@ private fun BudgetVsActualCard(
     expenses: List<Expense>,
     monthlyIncome: Double,
     categoryBudgets: List<com.financetracker.data.model.CategoryBudget> = emptyList(),
-    currentPeriod: YearMonth
+    currentPeriod: YearMonth,
+    rolloverSettings: List<CategoryRolloverSetting>,
+    allExpenses: List<Expense>,
+    onRolloverChange: (String, Boolean, Boolean) -> Unit
 ) {
     val currentPeriodText = currentPeriod.toString()
     val budgetsByCategory = categoryBudgets
         .filter { it.period == currentPeriodText }
         .associateBy { it.category }
+    val effectiveBudgetsByCategory = buildEffectiveBudgetsForReports(
+        budgets = categoryBudgets,
+        expenses = allExpenses,
+        rolloverSettings = rolloverSettings,
+        selectedMonth = currentPeriod
+    )
+    val rolloverByCategory = rolloverSettings.associateBy { it.category.lowercase(Locale.getDefault()) }
     val spendByCategory = expenses.groupBy { it.category }.mapValues { (_, entries) -> entries.sumOf { it.amount } }
     val trackedCategories = categories.filter { 
         (budgetsByCategory[it.name]?.amount ?: 0.0) > 0.0 || (spendByCategory[it.name] ?: 0.0) > 0.0 
@@ -900,8 +961,10 @@ private fun BudgetVsActualCard(
                 trackedCategories.forEach { category ->
                     val spent = spendByCategory[category.name] ?: 0.0
                     val budget = budgetsByCategory[category.name]?.amount ?: 0.0
-                    val progress = if (budget > 0.0) (spent / budget).toFloat().coerceIn(0f, 1f) else 0f
+                    val effectiveBudget = effectiveBudgetsByCategory[category.name] ?: budget
+                    val progress = if (effectiveBudget > 0.0) (spent / effectiveBudget).toFloat().coerceIn(0f, 1f) else 0f
                     val accent = categoryColor(category)
+                    val rolloverSetting = rolloverByCategory[category.name.lowercase(Locale.getDefault())]
 
                     Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                         Row(
@@ -911,9 +974,9 @@ private fun BudgetVsActualCard(
                         ) {
                             Text(category.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                             Text(
-                                text = "${formatCurrency(spent)} / ${if (budget > 0.0) formatCurrency(budget) else "No budget"}",
+                                text = "${formatCurrency(spent)} / ${if (effectiveBudget > 0.0) formatCurrency(effectiveBudget) else "No budget"}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = if (budget > 0.0 && spent > budget) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (effectiveBudget > 0.0 && spent > effectiveBudget) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Box(
@@ -929,6 +992,19 @@ private fun BudgetVsActualCard(
                                     .height(8.dp)
                                     .clip(Shapes.full)
                                     .background(accent)
+                            )
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Rollover unused budget",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            androidx.compose.material3.Switch(
+                                checked = rolloverSetting?.enabled == true,
+                                onCheckedChange = {
+                                    onRolloverChange(category.name, it, rolloverSetting?.carryOverspend ?: true)
+                                }
                             )
                         }
                     }
@@ -958,6 +1034,126 @@ private fun MonthComparisonCard(
                 ComparisonMetric("Income", comparison.currentIncome, comparison.previousIncome, Modifier.weight(1f))
                 ComparisonMetric("Spent", comparison.currentSpent, comparison.previousSpent, Modifier.weight(1f))
                 ComparisonMetric("Remaining", comparison.currentRemaining, comparison.previousRemaining, Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpendingInsightsCard(insights: List<String>) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(
+                title = "Spending Insights",
+                subtitle = "Plain-language changes detected from your history"
+            )
+            if (insights.isEmpty()) {
+                Text("Add more monthly history to unlock richer insights.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                insights.forEach { insight ->
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = Shapes.medium,
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.24f)
+                    ) {
+                        Text(insight, modifier = Modifier.padding(Spacing.md), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonthlyCloseReviewCard(
+    currentPeriod: YearMonth,
+    monthlyIncome: Double,
+    expenses: List<Expense>,
+    recurringEntries: List<RecurringEntry>,
+    note: MonthlyCloseNote,
+    onSaveNote: (String) -> Unit,
+    onExport: () -> Unit
+) {
+    var notes by rememberSaveable(note.period, note.notes) { mutableStateOf(note.notes) }
+    val spendingByCurrency = expenses.filterNot { it.isTransfer }
+        .groupBy { Currency.fromCode(it.currencyCode) }
+        .mapValues { (_, entries) -> entries.sumOf { it.amount } }
+    val primarySpending = spendingByCurrency[Currency.getDefault()] ?: 0.0
+    val savings = monthlyIncome - primarySpending
+    val topTransactions = expenses.filterNot { it.isTransfer }.sortedByDescending { it.amount }.take(3)
+    val topMerchants = expenses.filterNot { it.isTransfer }
+        .filter { it.description.isNotBlank() }
+        .groupBy { it.description.trim().lowercase(Locale.getDefault()) }
+        .mapValues { (_, entries) -> entries.sumOf { it.amount } }
+        .toList()
+        .sortedByDescending { it.second }
+        .take(3)
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(
+                title = "Monthly Close Review",
+                subtitle = "Finalize ${currentPeriod.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))}"
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                MetricCard("Income", formatCurrencyRounded(monthlyIncome), Modifier.weight(1f))
+                MetricCard("Saved", formatCurrencyRounded(savings), Modifier.weight(1f))
+                MetricCard("Rate", if (monthlyIncome > 0) String.format(Locale.US, "%.1f%%", savings / monthlyIncome * 100.0) else "0%", Modifier.weight(1f))
+            }
+            spendingByCurrency.forEach { (currency, total) ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Spent in ${currency.code}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    Text(formatCurrencyRounded(total, currency), style = MaterialTheme.typography.labelLarge)
+                }
+            }
+            if (topMerchants.isNotEmpty()) {
+                SectionHeader(title = "Top Merchants", subtitle = "Highest merchants this month")
+                topMerchants.forEach { (merchant, total) ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(merchant.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.bodyMedium)
+                        Text(formatCurrencyRounded(total), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            if (topTransactions.isNotEmpty()) {
+                SectionHeader(title = "Biggest Transactions", subtitle = "Largest individual expenses")
+                topTransactions.forEach { expense ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(expense.category, style = MaterialTheme.typography.bodyMedium)
+                        Text(formatCurrencyRounded(expense.amount, Currency.fromCode(expense.currencyCode)), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+            Text(
+                text = "${recurringEntries.count { it.active }} recurring plans are active. ${if (monthlyIncome <= 0.0) "Monthly income is missing." else "Monthly income is set."}",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (monthlyIncome <= 0.0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = notes,
+                onValueChange = { notes = it },
+                label = { Text("Month notes") },
+                minLines = 3,
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.medium
+            )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Button(onClick = { onSaveNote(notes) }, modifier = Modifier.weight(1f), shape = Shapes.medium) {
+                    Text("Save Notes")
+                }
+                OutlinedButton(onClick = onExport, modifier = Modifier.weight(1f), shape = Shapes.medium) {
+                    Text("Export CSV/PDF")
+                }
             }
         }
     }
@@ -1194,11 +1390,17 @@ private fun TopMerchantsCard(
 
 @Composable
 private fun RecurringPlansCard(
+    currentPeriod: YearMonth,
     recurringEntries: List<RecurringEntry>,
+    reminderOccurrences: List<RecurringReminderOccurrence>,
     onToggleActive: (RecurringEntry, Boolean) -> Unit,
     onEditEntry: (RecurringEntry) -> Unit,
-    onDeleteEntry: (RecurringEntry) -> Unit
+    onDeleteEntry: (RecurringEntry) -> Unit,
+    onReminderChange: (RecurringEntry, Boolean, Int) -> Unit,
+    onMarkPaid: (RecurringEntry) -> Unit,
+    onMarkSkipped: (RecurringEntry) -> Unit
 ) {
+    val occurrenceByEntry = reminderOccurrences.associateBy { "${it.entryId}|${it.period}" }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = Shapes.large,
@@ -1214,6 +1416,8 @@ private fun RecurringPlansCard(
                 Text("No recurring plans yet. Create one from Add Expense or Income History.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 recurringEntries.forEach { entry ->
+                    val occurrenceStatus = occurrenceByEntry["${entry.id}|${currentPeriod}"]?.status
+                        ?: RecurringReminderStatus.PENDING
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = Shapes.medium,
@@ -1243,6 +1447,211 @@ private fun RecurringPlansCard(
                                 Icon(Icons.Default.Store, contentDescription = "Delete recurring entry")
                             }
                         }
+                        Row(
+                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Reminder", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "${entry.reminderDaysBefore} days before due day • ${occurrenceStatus.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { onReminderChange(entry, entry.reminderEnabled, entry.reminderDaysBefore - 1) },
+                                enabled = entry.reminderDaysBefore > 0
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.TrendingDown, contentDescription = "Decrease reminder days")
+                            }
+                            Text(entry.reminderDaysBefore.toString(), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            IconButton(
+                                onClick = { onReminderChange(entry, entry.reminderEnabled, entry.reminderDaysBefore + 1) },
+                                enabled = entry.reminderDaysBefore < 14
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.TrendingUp, contentDescription = "Increase reminder days")
+                            }
+                            androidx.compose.material3.Switch(
+                                checked = entry.reminderEnabled,
+                                onCheckedChange = { onReminderChange(entry, it, entry.reminderDaysBefore) }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.sm),
+                            horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onMarkPaid(entry) },
+                                modifier = Modifier.weight(1f),
+                                shape = Shapes.medium
+                            ) {
+                                Text(if (entry.type == RecurringType.INCOME) "Received" else "Paid")
+                            }
+                            OutlinedButton(
+                                onClick = { onMarkSkipped(entry) },
+                                modifier = Modifier.weight(1f),
+                                shape = Shapes.medium
+                            ) {
+                                Text("Skipped")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebtPayoffTrackerCard(
+    debts: List<DebtAccount>,
+    defaultCurrency: Currency,
+    onSave: (DebtAccount) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var balance by rememberSaveable { mutableStateOf("") }
+    var rate by rememberSaveable { mutableStateOf("") }
+    var payment by rememberSaveable { mutableStateOf("") }
+    var dueDay by rememberSaveable { mutableStateOf("1") }
+    var target by rememberSaveable { mutableStateOf(YearMonth.now().plusYears(1).toString()) }
+    val totalDebt = debts.sumOf { it.currentBalance }
+    val totalMinimum = debts.sumOf { it.minimumPayment }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(title = "Debt Payoff Tracker", subtitle = "Loans and credit cards with payoff progress")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                MetricCard("Debt", formatCurrencyRounded(totalDebt, defaultCurrency), Modifier.weight(1f))
+                MetricCard("Min Pay", formatCurrencyRounded(totalMinimum, defaultCurrency), Modifier.weight(1f))
+                MetricCard("Accounts", debts.size.toString(), Modifier.weight(1f))
+            }
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Debt name") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedTextField(value = balance, onValueChange = { balance = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Balance") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+                OutlinedTextField(value = payment, onValueChange = { payment = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Min payment") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedTextField(value = rate, onValueChange = { rate = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Interest %") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+                OutlinedTextField(value = dueDay, onValueChange = { dueDay = it.filter(Char::isDigit).take(2) }, label = { Text("Due day") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+            }
+            OutlinedTextField(value = target, onValueChange = { target = it }, label = { Text("Target payoff month YYYY-MM") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
+            Button(
+                onClick = {
+                    onSave(
+                        DebtAccount(
+                            id = UUID.randomUUID().toString(),
+                            name = name,
+                            currentBalance = balance.toDoubleOrNull() ?: 0.0,
+                            interestRate = rate.toDoubleOrNull() ?: 0.0,
+                            minimumPayment = payment.toDoubleOrNull() ?: 0.0,
+                            dueDay = dueDay.toIntOrNull() ?: 1,
+                            targetPayoffPeriod = target,
+                            currencyCode = defaultCurrency.code
+                        )
+                    )
+                    name = ""
+                    balance = ""
+                    rate = ""
+                    payment = ""
+                },
+                enabled = name.isNotBlank() && balance.toDoubleOrNull() != null,
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.medium
+            ) { Text("Save Debt") }
+            debts.forEach { debt ->
+                val monthsLeft = if (debt.minimumPayment > 0.0) kotlin.math.ceil(debt.currentBalance / debt.minimumPayment).toInt() else 0
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(debt.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text("Due day ${debt.dueDay} • estimated ${monthsLeft} months", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(formatCurrencyRounded(debt.currentBalance, Currency.fromCode(debt.currencyCode)), style = MaterialTheme.typography.labelLarge)
+                    IconButton(onClick = { onDelete(debt.id) }) { Icon(Icons.Default.Delete, contentDescription = "Delete debt") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InvestmentTrackerCard(
+    holdings: List<InvestmentHolding>,
+    defaultCurrency: Currency,
+    onSave: (InvestmentHolding) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var assetType by rememberSaveable { mutableStateOf("Mutual Fund") }
+    var units by rememberSaveable { mutableStateOf("") }
+    var averageCost by rememberSaveable { mutableStateOf("") }
+    var currentValue by rememberSaveable { mutableStateOf("") }
+    var contribution by rememberSaveable { mutableStateOf("") }
+    val invested = holdings.sumOf { it.units * it.averageCost }
+    val current = holdings.sumOf { it.currentValue }
+    val gainLoss = current - invested
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(title = "Investment Tracking", subtitle = "Manual investments without brokerage integration")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                MetricCard("Invested", formatCurrencyRounded(invested, defaultCurrency), Modifier.weight(1f))
+                MetricCard("Value", formatCurrencyRounded(current, defaultCurrency), Modifier.weight(1f))
+                MetricCard("Gain/Loss", formatCurrencyRounded(gainLoss, defaultCurrency), Modifier.weight(1f))
+            }
+            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Investment name") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
+            OutlinedTextField(value = assetType, onValueChange = { assetType = it }, label = { Text("Asset type") }, modifier = Modifier.fillMaxWidth(), shape = Shapes.medium)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedTextField(value = units, onValueChange = { units = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Units") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+                OutlinedTextField(value = averageCost, onValueChange = { averageCost = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Avg cost") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedTextField(value = currentValue, onValueChange = { currentValue = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Current value") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+                OutlinedTextField(value = contribution, onValueChange = { contribution = it.filter { char -> char.isDigit() || char == '.' } }, label = { Text("Monthly SIP") }, modifier = Modifier.weight(1f), shape = Shapes.medium)
+            }
+            Button(
+                onClick = {
+                    onSave(
+                        InvestmentHolding(
+                            id = UUID.randomUUID().toString(),
+                            name = name,
+                            assetType = assetType,
+                            units = units.toDoubleOrNull() ?: 0.0,
+                            averageCost = averageCost.toDoubleOrNull() ?: 0.0,
+                            currentValue = currentValue.toDoubleOrNull() ?: 0.0,
+                            monthlyContribution = contribution.toDoubleOrNull() ?: 0.0,
+                            currencyCode = defaultCurrency.code
+                        )
+                    )
+                    name = ""
+                    currentValue = ""
+                },
+                enabled = name.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.medium
+            ) { Text("Save Investment") }
+            holdings.groupBy { it.assetType }.forEach { (type, typedHoldings) ->
+                Text(type, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                typedHoldings.forEach { holding ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(holding.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                            Text("${holding.units} units • SIP ${formatCurrencyRounded(holding.monthlyContribution, Currency.fromCode(holding.currencyCode))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Text(formatCurrencyRounded(holding.currentValue, Currency.fromCode(holding.currencyCode)), style = MaterialTheme.typography.labelLarge)
+                        IconButton(onClick = { onDelete(holding.id) }) { Icon(Icons.Default.Delete, contentDescription = "Delete investment") }
                     }
                 }
             }
@@ -1322,6 +1731,90 @@ private data class MonthComparison(
 ) {
     val currentRemaining: Double get() = currentIncome - currentSpent
     val previousRemaining: Double get() = previousIncome - previousSpent
+}
+
+private fun buildSpendingInsights(
+    expenses: List<Expense>,
+    incomeEntries: List<IncomeEntry>,
+    categoryBudgets: List<com.financetracker.data.model.CategoryBudget>,
+    currentPeriod: YearMonth,
+    currentMonthlyIncome: Double
+): List<String> {
+    val previousPeriod = currentPeriod.minusMonths(1)
+    val currentExpenses = expenses.filter { YearMonth.from(it.date) == currentPeriod && !it.isTransfer }
+    val previousExpenses = expenses.filter { YearMonth.from(it.date) == previousPeriod && !it.isTransfer }
+    val insights = mutableListOf<String>()
+
+    val currentByCategory = currentExpenses.groupBy { it.category }.mapValues { (_, entries) -> entries.sumOf { it.amount } }
+    val previousByCategory = previousExpenses.groupBy { it.category }.mapValues { (_, entries) -> entries.sumOf { it.amount } }
+    currentByCategory.toList()
+        .sortedByDescending { it.second }
+        .take(4)
+        .forEach { (category, currentAmount) ->
+            val previousAmount = previousByCategory[category] ?: 0.0
+            if (previousAmount > 0.0 && currentAmount > previousAmount * 1.2) {
+                insights += "$category spending increased by ${String.format(Locale.US, "%.0f%%", ((currentAmount - previousAmount) / previousAmount) * 100.0)} compared with last month."
+            }
+        }
+
+    currentExpenses.groupBy { it.paymentMethod }
+        .mapValues { (_, entries) -> entries.sumOf { it.amount } }
+        .maxByOrNull { it.value }
+        ?.takeIf { it.value > currentExpenses.sumOf { expense -> expense.amount } * 0.45 }
+        ?.let { insights += "${it.key} is carrying most of this month's spending." }
+
+    val currentIncome = incomeEntries.firstOrNull { it.period == currentPeriod.toString() }?.amount ?: currentMonthlyIncome
+    val previousIncome = incomeEntries.firstOrNull { it.period == previousPeriod.toString() }?.amount ?: 0.0
+    val currentSavings = currentIncome - currentExpenses.sumOf { it.amount }
+    val previousSavings = previousIncome - previousExpenses.sumOf { it.amount }
+    if (currentIncome > 0.0 && currentSavings > previousSavings) {
+        insights += "Savings improved compared with the previous month."
+    }
+
+    categoryBudgets.filter { it.period == currentPeriod.toString() }.forEach { budget ->
+        val spent = currentByCategory[budget.category] ?: 0.0
+        if (budget.amount > 0.0 && spent >= budget.amount * 0.85 && spent <= budget.amount) {
+            insights += "${budget.category} is close to exceeding its budget."
+        } else if (budget.amount > 0.0 && spent > budget.amount) {
+            insights += "${budget.category} has exceeded its budget."
+        }
+    }
+
+    val day = if (currentPeriod == YearMonth.now()) LocalDate.now().dayOfMonth else currentPeriod.lengthOfMonth()
+    val projectedSpend = if (day > 0) currentExpenses.sumOf { it.amount } / day * currentPeriod.lengthOfMonth() else 0.0
+    if (currentIncome > 0.0 && projectedSpend > currentIncome) {
+        insights += "Spending is projected to exceed income before month end."
+    }
+
+    return insights.distinct().take(6)
+}
+
+private fun buildEffectiveBudgetsForReports(
+    budgets: List<com.financetracker.data.model.CategoryBudget>,
+    expenses: List<Expense>,
+    rolloverSettings: List<CategoryRolloverSetting>,
+    selectedMonth: YearMonth
+): Map<String, Double> {
+    val settingsByCategory = rolloverSettings.associateBy { it.category.lowercase(Locale.getDefault()) }
+    return budgets
+        .filter { it.period == selectedMonth.toString() }
+        .associate { budget ->
+            val setting = settingsByCategory[budget.category.lowercase(Locale.getDefault())]
+            val effectiveAmount = if (setting?.enabled == true) {
+                val previousMonth = selectedMonth.minusMonths(1)
+                val previousBudget = budgets.firstOrNull {
+                    it.period == previousMonth.toString() && it.category.equals(budget.category, ignoreCase = true)
+                }?.amount ?: 0.0
+                val previousSpent = expenses
+                    .filter { YearMonth.from(it.date) == previousMonth && it.category.equals(budget.category, ignoreCase = true) }
+                    .sumOf { it.amount }
+                val rollover = previousBudget - previousSpent
+                budget.amount + if (rollover >= 0.0 || setting.carryOverspend) rollover else 0.0
+            } else {
+                budget.amount
+            }
+            budget.category to effectiveAmount
+        }
 }
 
 private fun buildMonthComparison(

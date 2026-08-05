@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
@@ -42,6 +44,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -79,7 +82,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.financetracker.data.model.AccountBalance
 import com.financetracker.data.model.Category
+import com.financetracker.data.model.CategoryBudget
+import com.financetracker.data.model.CategoryRolloverSetting
 import com.financetracker.data.model.Currency
+import com.financetracker.data.model.DashboardCardPreference
 import com.financetracker.data.model.Expense
 import com.financetracker.data.model.RecurringEntry
 import com.financetracker.data.model.RecurringType
@@ -145,7 +151,18 @@ fun DashboardScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryFilter by remember { mutableStateOf("All categories") }
     var selectedAccountFilter by remember { mutableStateOf("All accounts") }
+    var selectedCurrencyFilter by remember { mutableStateOf("All currencies") }
+    var minAmountInput by remember { mutableStateOf("") }
+    var maxAmountInput by remember { mutableStateOf("") }
+    var tagFilter by remember { mutableStateOf("") }
+    var selectedTypeFilter by remember { mutableStateOf("All types") }
+    var receiptFilter by remember { mutableStateOf("Any receipt") }
+    var recurringFilter by remember { mutableStateOf("Any source") }
+    var overBudgetOnly by remember { mutableStateOf(false) }
+    var selectedDashboardGroup by remember { mutableStateOf("Overview") }
     var selectedSort by remember { mutableStateOf(TransactionSortOption.NEWEST) }
+    var selectedTransactionIds by remember { mutableStateOf(setOf<String>()) }
+    var showBulkEditDialog by remember { mutableStateOf(false) }
     var quickAddAmount by remember { mutableStateOf("") }
     var quickAddCategory by remember { mutableStateOf("") }
     var quickAddAccount by remember { mutableStateOf("Cash") }
@@ -180,9 +197,19 @@ fun DashboardScreen(
     val spendByCategory = primaryCurrencyExpenses
         .groupBy { it.category }
         .mapValues { (_, expenses) -> expenses.sumOf { it.amount } }
+    val currentMonthText = uiState.currentMonthSheet
+        .removePrefix("expenses_")
+        .replace("_", " / ")
+    val selectedMonth = parseCurrentPeriodFromSheet(uiState.currentMonthSheet)
     val categoryBudgetsByCategory = uiState.categoryBudgets
         .filter { it.period == parseCurrentPeriodFromSheet(uiState.currentMonthSheet).toString() }
         .associateBy { it.category }
+    val effectiveBudgetsByCategory = buildEffectiveBudgets(
+        budgets = uiState.categoryBudgets,
+        expenses = historyExpenses,
+        rolloverSettings = uiState.categoryRolloverSettings,
+        selectedMonth = selectedMonth
+    )
     val highlightedCategories = uiState.categoryState.categories
         .sortedWith(
             compareByDescending<Category> { spendByCategory[it.name] ?: 0.0 }
@@ -190,10 +217,6 @@ fun DashboardScreen(
                 .thenBy { it.name }
         )
         .take(4)
-    val currentMonthText = uiState.currentMonthSheet
-        .removePrefix("expenses_")
-        .replace("_", " / ")
-    val selectedMonth = parseCurrentPeriodFromSheet(uiState.currentMonthSheet)
     val selectedQuickAddDate = LocalDate.now().let { today ->
         if (YearMonth.from(today) == selectedMonth) {
             today
@@ -259,24 +282,57 @@ fun DashboardScreen(
     }
 
     val categoryFilterOptions = listOf("All categories") + uiState.categoryState.categories.map { it.name }
+    val currencyFilterOptions = listOf("All currencies") + Currency.entries.map { it.code }
+    val typeFilterOptions = listOf("All types", "Expenses", "Transfers", "Split")
+    val receiptFilterOptions = listOf("Any receipt", "Has receipt", "No receipt")
+    val recurringFilterOptions = listOf("Any source", "Recurring", "Manual")
     val accountOptions = accountOptions()
     if (quickAddCategory.isBlank() && uiState.categoryState.categories.isNotEmpty()) {
         quickAddCategory = uiState.categoryState.categories.first().name
     }
     val parsedStartDate = runCatching { LocalDate.parse(startDateInput) }.getOrNull()
     val parsedEndDate = runCatching { LocalDate.parse(endDateInput) }.getOrNull()
+    val parsedMinAmount = minAmountInput.toDoubleOrNull()
+    val parsedMaxAmount = maxAmountInput.toDoubleOrNull()
     val filteredExpenses = visibleMonthExpenses.filter { expense ->
         val matchesQuery = searchQuery.isBlank() || listOf(
             expense.category,
             expense.subcategory.orEmpty(),
             expense.description,
-            expense.amount.toString()
+            expense.amount.toString(),
+            expense.paymentMethod,
+            expense.tags.joinToString(" ")
         ).any { it.contains(searchQuery, ignoreCase = true) }
         val matchesCategory = selectedCategoryFilter == "All categories" || expense.category == selectedCategoryFilter
         val matchesAccount = selectedAccountFilter == "All accounts" || expense.paymentMethod == selectedAccountFilter
+        val matchesCurrency = selectedCurrencyFilter == "All currencies" || expense.currencyCode == selectedCurrencyFilter
         val matchesStartDate = parsedStartDate == null || !expense.date.isBefore(parsedStartDate)
         val matchesEndDate = parsedEndDate == null || !expense.date.isAfter(parsedEndDate)
-        matchesQuery && matchesCategory && matchesAccount && matchesStartDate && matchesEndDate
+        val matchesMinAmount = parsedMinAmount == null || expense.amount >= parsedMinAmount
+        val matchesMaxAmount = parsedMaxAmount == null || expense.amount <= parsedMaxAmount
+        val requestedTags = tagFilter.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        val matchesTags = requestedTags.isEmpty() || requestedTags.all { requested ->
+            expense.tags.any { it.equals(requested, ignoreCase = true) }
+        }
+        val matchesType = when (selectedTypeFilter) {
+            "Expenses" -> !expense.isTransfer && expense.splitGroupId == null
+            "Transfers" -> expense.isTransfer
+            "Split" -> expense.splitGroupId != null
+            else -> true
+        }
+        val matchesReceipt = when (receiptFilter) {
+            "Has receipt" -> !expense.receiptUrl.isNullOrBlank()
+            "No receipt" -> expense.receiptUrl.isNullOrBlank()
+            else -> true
+        }
+        val matchesRecurring = when (recurringFilter) {
+            "Recurring" -> expense.recurringEntryId != null
+            "Manual" -> expense.recurringEntryId == null
+            else -> true
+        }
+        val matchesBudget = !overBudgetOnly || isExpenseOverEffectiveBudget(expense, visibleMonthExpenses, effectiveBudgetsByCategory)
+        matchesQuery && matchesCategory && matchesAccount && matchesCurrency && matchesStartDate && matchesEndDate &&
+            matchesMinAmount && matchesMaxAmount && matchesTags && matchesType && matchesReceipt && matchesRecurring && matchesBudget
     }.sortedWith(sortComparator(selectedSort))
     val quickAddDuplicate = quickAddAmount.toDoubleOrNull()?.let { amount ->
         uiState.expenses.firstOrNull { expense ->
@@ -292,6 +348,7 @@ fun DashboardScreen(
     val lastAttemptText = uiState.syncStatus.lastSyncAttemptMillis?.let(::formatTimestamp)
         ?: "No refresh attempts yet"
     val refreshLabel = if (uiState.syncStatus.lastSyncError != null) "Retry Sync" else "Refresh Data"
+    val dashboardGroups = listOf("Overview", "Calendar", "Goals", "Data")
 
     LaunchedEffect(uiState.pendingUndoDelete?.token) {
         val pendingUndo = uiState.pendingUndoDelete ?: return@LaunchedEffect
@@ -367,161 +424,199 @@ fun DashboardScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.lg)
         ) {
             item {
-                BalanceCard(
-                    monthlyIncome = uiState.monthlyIncome,
-                    totalAmount = selectedMonthSpending,
-                    remainingAmount = remainingAmount,
-                    transactionCount = visibleMonthExpenses.size,
-                    averageSpend = averageSpend,
-                    currency = currency
+                DashboardGroupSelector(
+                    groups = dashboardGroups,
+                    selectedGroup = selectedDashboardGroup,
+                    onGroupSelected = { selectedDashboardGroup = it }
                 )
             }
 
             item {
-                SavingsDashboardCard(
-                    selectedSummary = selectedSavingsSummary,
-                    totalSavings = totalSavings,
-                    allTimeSavingsRate = allTimeSavingsRate,
-                    bestMonth = bestSavingsMonth,
-                    worstMonth = worstSavingsMonth,
-                    negativeSavingsMonths = negativeSavingsMonths,
-                    monthlySummaries = savingsSummaries.takeLast(6),
-                    currency = currency
-                )
+                DashboardFeatureContainer("monthly_overview", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    BalanceCard(
+                        monthlyIncome = uiState.monthlyIncome,
+                        totalAmount = selectedMonthSpending,
+                        remainingAmount = remainingAmount,
+                        transactionCount = visibleMonthExpenses.size,
+                        averageSpend = averageSpend,
+                        currency = currency
+                    )
+                }
             }
 
             item {
-                CalendarSpendingCard(
-                    selectedMonth = selectedMonth,
-                    expenses = visibleMonthExpenses,
-                    preferredCurrency = currency
-                )
+                DashboardFeatureContainer("savings_dashboard", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    SavingsDashboardCard(
+                        selectedSummary = selectedSavingsSummary,
+                        totalSavings = totalSavings,
+                        allTimeSavingsRate = allTimeSavingsRate,
+                        bestMonth = bestSavingsMonth,
+                        worstMonth = worstSavingsMonth,
+                        negativeSavingsMonths = negativeSavingsMonths,
+                        monthlySummaries = savingsSummaries.takeLast(6),
+                        currency = currency
+                    )
+                }
             }
 
             item {
-                MultiCurrencyExpenditureCard(
-                    selectedMonth = selectedMonth,
-                    summaries = currencyExpenseSummaries
-                )
-            }
-
-            item {
-                ExchangeConversionCard(
-                    preferredCurrency = currency,
-                    convertedSpending = convertedMonthSpending,
-                    enabled = uiState.exchangeConversionEnabled,
-                    onToggle = viewModel::setExchangeConversionEnabled,
-                    onConfigure = { showExchangeDialog = true }
-                )
-            }
-
-            item {
-                UsefulDashboardCard(
-                    selectedMonth = selectedMonth,
-                    dailyBurnRate = dailyBurnRate,
-                    projectedSpending = projectedSpending,
-                    safeToSpendPerDay = safeToSpendPerDay,
-                    paymentSummary = paymentSummary,
-                    upcomingRecurring = upcomingRecurring,
-                    currency = currency
-                )
-            }
-
-            item {
-                NetWorthCard(
-                    balances = uiState.accountBalances,
-                    currency = currency,
-                    onEditClick = { showNetWorthDialog = true }
-                )
-            }
-
-            item {
-                SavingsGoalsCard(
-                    goals = uiState.savingsGoals,
-                    onEditClick = { showGoalDialog = true }
-                )
-            }
-
-            item {
-                DashboardControlCard(
-                    currentMonthText = currentMonthText,
-                    selectedMonth = selectedMonth,
-                    onMonthChange = { viewModel.selectMonth(it.toString()) },
-                    onOpenMonthPicker = { showMonthPicker = true },
-                    incomeInput = incomeInput,
-                    onIncomeInputChange = { value ->
-                        incomeInput = value.filter { it.isDigit() || it == '.' }
-                    },
-                    onSaveIncome = {
-                        parsedIncome?.let(viewModel::setMonthlyIncome)
-                    },
-                    canSaveIncome = canSaveIncome && !uiState.isLoading,
-                    entryCount = visibleMonthExpenses.size,
-                    categoryCount = uiState.categoryState.categories.size,
-                    isLoading = uiState.isLoading,
-                    onRefreshClick = viewModel::refreshData,
-                    syncStatus = uiState.syncStatus,
-                    lastSyncedText = lastSyncedText,
-                    lastAttemptText = lastAttemptText,
-                    refreshLabel = refreshLabel,
-                    currency = currency,
-                    clearDates = clearDates,
-                    includeTransfers = uiState.includeTransfersInReports,
-                    onIncludeTransfersChange = viewModel::setIncludeTransfersInReports,
-                    onExportData = viewModel::exportData,
-                    onBackupData = viewModel::backupData,
-                    onRestoreBackup = viewModel::restoreLatestBackup,
-                    onClearDay = { date ->
-                        clearAction = ClearAction.Day(
-                            date = date,
-                            count = uiState.expenses.count { it.date == date }
-                        )
-                    },
-                    onClearMonth = {
-                        clearAction = ClearAction.Month(
-                            month = selectedMonth,
-                            count = uiState.expenses.size
-                        )
-                    },
-                    onClearAll = {
-                        clearAction = ClearAction.All(
-                            count = uiState.reportExpenses.ifEmpty { uiState.expenses }.size
-                        )
-                    }
-                )
-            }
-
-            item {
-                QuickAddCard(
-                    amount = quickAddAmount,
-                    onAmountChange = { quickAddAmount = it.filter { char -> char.isDigit() || char == '.' } },
-                    categoryOptions = uiState.categoryState.categories.map { it.name },
-                    selectedCategory = quickAddCategory,
-                    onCategorySelected = { quickAddCategory = it },
-                    accountOptions = accountOptions.drop(1),
-                    selectedAccount = quickAddAccount,
-                    onAccountSelected = { quickAddAccount = it },
-                    selectedCurrency = quickAddCurrency,
-                    onCurrencySelected = { quickAddCurrency = it },
-                    duplicateExpense = quickAddDuplicate,
-                    onSave = {
-                        quickAddAmount.toDoubleOrNull()?.let { amount ->
-                            val expense = Expense(
-                                date = selectedQuickAddDate,
-                                amount = amount,
-                                currencyCode = quickAddCurrency.code,
-                                category = quickAddCategory.ifBlank { "Other" },
-                                paymentMethod = quickAddAccount
+                DashboardFeatureContainer("spending_calendar", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    CalendarSpendingCard(
+                        selectedMonth = selectedMonth,
+                        expenses = visibleMonthExpenses,
+                        preferredCurrency = currency,
+                        conversionEnabled = uiState.exchangeConversionEnabled,
+                        exchangeRates = uiState.exchangeRates,
+                        onClearDay = { date ->
+                            clearAction = ClearAction.Day(
+                                date = date,
+                                count = uiState.expenses.count { it.date == date }
                             )
-                            viewModel.addExpense(expense)
-                            scope.launch {
-                                snackbarHostState.showSnackbar("Quick expense saved")
-                            }
-                            quickAddAmount = ""
                         }
-                    },
-                    enabled = quickAddAmount.toDoubleOrNull() != null && quickAddCategory.isNotBlank()
-                )
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("multi_currency", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    MultiCurrencyExpenditureCard(
+                        selectedMonth = selectedMonth,
+                        summaries = currencyExpenseSummaries
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("exchange_conversion", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    ExchangeConversionCard(
+                        preferredCurrency = currency,
+                        convertedSpending = convertedMonthSpending,
+                        enabled = uiState.exchangeConversionEnabled,
+                        onToggle = viewModel::setExchangeConversionEnabled,
+                        onConfigure = { showExchangeDialog = true }
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("operating_view", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    UsefulDashboardCard(
+                        selectedMonth = selectedMonth,
+                        dailyBurnRate = dailyBurnRate,
+                        projectedSpending = projectedSpending,
+                        safeToSpendPerDay = safeToSpendPerDay,
+                        paymentSummary = paymentSummary,
+                        upcomingRecurring = upcomingRecurring,
+                        currency = currency
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("net_worth", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    NetWorthCard(
+                        balances = uiState.accountBalances,
+                        currency = currency,
+                        onEditClick = { showNetWorthDialog = true }
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("savings_goals", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    SavingsGoalsCard(
+                        goals = uiState.savingsGoals,
+                        suggestedSavings = selectedSavingsSummary.savings.coerceAtLeast(0.0),
+                        onAutoAllocate = { viewModel.applyGoalAutoContribution(selectedSavingsSummary.savings) },
+                        onEditClick = { showGoalDialog = true }
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("month_data", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    DashboardControlCard(
+                        currentMonthText = currentMonthText,
+                        selectedMonth = selectedMonth,
+                        onMonthChange = { viewModel.selectMonth(it.toString()) },
+                        onOpenMonthPicker = { showMonthPicker = true },
+                        incomeInput = incomeInput,
+                        onIncomeInputChange = { value ->
+                            incomeInput = value.filter { it.isDigit() || it == '.' }
+                        },
+                        onSaveIncome = {
+                            parsedIncome?.let(viewModel::setMonthlyIncome)
+                        },
+                        canSaveIncome = canSaveIncome && !uiState.isLoading,
+                        entryCount = visibleMonthExpenses.size,
+                        categoryCount = uiState.categoryState.categories.size,
+                        isLoading = uiState.isLoading,
+                        onRefreshClick = viewModel::refreshData,
+                        syncStatus = uiState.syncStatus,
+                        lastSyncedText = lastSyncedText,
+                        lastAttemptText = lastAttemptText,
+                        refreshLabel = refreshLabel,
+                        currency = currency,
+                        clearDates = clearDates,
+                        includeTransfers = uiState.includeTransfersInReports,
+                        onIncludeTransfersChange = viewModel::setIncludeTransfersInReports,
+                        onExportData = viewModel::exportData,
+                        onBackupData = viewModel::backupData,
+                        onRestoreBackup = viewModel::restoreLatestBackup,
+                        onClearDay = { date ->
+                            clearAction = ClearAction.Day(
+                                date = date,
+                                count = uiState.expenses.count { it.date == date }
+                            )
+                        },
+                        onClearMonth = {
+                            clearAction = ClearAction.Month(
+                                month = selectedMonth,
+                                count = uiState.expenses.size
+                            )
+                        },
+                        onClearAll = {
+                            clearAction = ClearAction.All(
+                                count = uiState.reportExpenses.ifEmpty { uiState.expenses }.size
+                            )
+                        }
+                    )
+                }
+            }
+
+            item {
+                DashboardFeatureContainer("quick_add", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    QuickAddCard(
+                        amount = quickAddAmount,
+                        onAmountChange = { quickAddAmount = it.filter { char -> char.isDigit() || char == '.' } },
+                        categoryOptions = uiState.categoryState.categories.map { it.name },
+                        selectedCategory = quickAddCategory,
+                        onCategorySelected = { quickAddCategory = it },
+                        accountOptions = accountOptions.drop(1),
+                        selectedAccount = quickAddAccount,
+                        onAccountSelected = { quickAddAccount = it },
+                        selectedCurrency = quickAddCurrency,
+                        onCurrencySelected = { quickAddCurrency = it },
+                        duplicateExpense = quickAddDuplicate,
+                        onSave = {
+                            quickAddAmount.toDoubleOrNull()?.let { amount ->
+                                val expense = Expense(
+                                    date = selectedQuickAddDate,
+                                    amount = amount,
+                                    currencyCode = quickAddCurrency.code,
+                                    category = quickAddCategory.ifBlank { "Other" },
+                                    paymentMethod = quickAddAccount
+                                )
+                                viewModel.addExpense(expense)
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("Quick expense saved")
+                                }
+                                quickAddAmount = ""
+                            }
+                        },
+                        enabled = quickAddAmount.toDoubleOrNull() != null && quickAddCategory.isNotBlank()
+                    )
+                }
             }
 
             if (errorMessage != null) {
@@ -531,47 +626,50 @@ fun DashboardScreen(
             }
 
             item {
-                QuickActionsRow(
-                    onReportsClick = onReportsClick,
-                    onCategoriesClick = onCategoriesClick,
-                    onSettingsClick = onSettingsClick
-                )
-            }
-
-            if (highlightedCategories.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title = "Top Categories",
-                        subtitle = "Where your spending is going this month",
-                        action = {
-                            Text(
-                                text = "See all",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier
-                                    .clickable(onClick = onCategoriesClick)
-                                    .padding(Spacing.sm)
-                            )
-                        }
+                DashboardFeatureContainer("quick_actions", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    QuickActionsRow(
+                        onReportsClick = onReportsClick,
+                        onCategoriesClick = onCategoriesClick,
+                        onSettingsClick = onSettingsClick
                     )
                 }
+            }
 
+            if (highlightedCategories.isNotEmpty() && dashboardCardVisible("top_categories", selectedDashboardGroup, uiState.dashboardCardPreferences)) {
                 item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
-                    ) {
-                        highlightedCategories.forEach { category ->
-                            val amount = uiState.expenses
-                                .filter { it.category == category.name }
-                                .sumOf { it.amount }
-                            CategoryMiniCard(
-                                category = category,
-                                amount = amount,
-                                currency = currency,
-                                modifier = Modifier.weight(1f)
+                    DashboardFeatureContainer("top_categories", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+                            SectionHeader(
+                                title = "Top Categories",
+                                subtitle = "Where your spending is going this month",
+                                action = {
+                                    Text(
+                                        text = "See all",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier
+                                            .clickable(onClick = onCategoriesClick)
+                                            .padding(Spacing.sm)
+                                    )
+                                }
                             )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+                            ) {
+                                highlightedCategories.forEach { category ->
+                                    val amount = uiState.expenses
+                                        .filter { it.category == category.name }
+                                        .sumOf { it.amount }
+                                    CategoryMiniCard(
+                                        category = category,
+                                        amount = amount,
+                                        currency = currency,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -588,30 +686,73 @@ fun DashboardScreen(
             }
 
             item {
-                TransactionFilterCard(
-                    searchQuery = searchQuery,
-                    onSearchQueryChange = { searchQuery = it },
-                    categoryOptions = categoryFilterOptions,
-                    selectedCategory = selectedCategoryFilter,
-                    onCategorySelected = { selectedCategoryFilter = it },
-                    accountOptions = accountOptions,
-                    selectedAccount = selectedAccountFilter,
-                    onAccountSelected = { selectedAccountFilter = it },
-                    startDateInput = startDateInput,
-                    onStartDateInputChange = { startDateInput = it },
-                    endDateInput = endDateInput,
-                    onEndDateInputChange = { endDateInput = it },
-                    sortOptions = TransactionSortOption.entries,
-                    selectedSort = selectedSort,
-                    onSortSelected = { selectedSort = it }
-                )
+                DashboardFeatureContainer("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences, viewModel::toggleDashboardCardCollapsed) {
+                    TransactionFilterCard(
+                        searchQuery = searchQuery,
+                        onSearchQueryChange = { searchQuery = it },
+                        categoryOptions = categoryFilterOptions,
+                        selectedCategory = selectedCategoryFilter,
+                        onCategorySelected = { selectedCategoryFilter = it },
+                        accountOptions = accountOptions,
+                        selectedAccount = selectedAccountFilter,
+                        onAccountSelected = { selectedAccountFilter = it },
+                        currencyOptions = currencyFilterOptions,
+                        selectedCurrency = selectedCurrencyFilter,
+                        onCurrencySelected = { selectedCurrencyFilter = it },
+                        minAmountInput = minAmountInput,
+                        onMinAmountInputChange = { minAmountInput = it.filter { char -> char.isDigit() || char == '.' } },
+                        maxAmountInput = maxAmountInput,
+                        onMaxAmountInputChange = { maxAmountInput = it.filter { char -> char.isDigit() || char == '.' } },
+                        tagFilter = tagFilter,
+                        onTagFilterChange = { tagFilter = it },
+                        typeOptions = typeFilterOptions,
+                        selectedType = selectedTypeFilter,
+                        onTypeSelected = { selectedTypeFilter = it },
+                        receiptOptions = receiptFilterOptions,
+                        selectedReceipt = receiptFilter,
+                        onReceiptSelected = { receiptFilter = it },
+                        recurringOptions = recurringFilterOptions,
+                        selectedRecurring = recurringFilter,
+                        onRecurringSelected = { recurringFilter = it },
+                        overBudgetOnly = overBudgetOnly,
+                        onOverBudgetOnlyChange = { overBudgetOnly = it },
+                        startDateInput = startDateInput,
+                        onStartDateInputChange = { startDateInput = it },
+                        endDateInput = endDateInput,
+                        onEndDateInputChange = { endDateInput = it },
+                        sortOptions = TransactionSortOption.entries,
+                        selectedSort = selectedSort,
+                        onSortSelected = { selectedSort = it }
+                    )
+                }
             }
 
             item {
-                SectionHeader(
-                    title = "Recent Transactions",
-                    subtitle = "${filteredExpenses.size} matching transactions this month"
-                )
+                if (dashboardCardVisible("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences)) {
+                    SectionHeader(
+                        title = "Recent Transactions",
+                        subtitle = "${filteredExpenses.size} matching transactions this month"
+                    )
+                }
+            }
+
+            if (dashboardCardVisible("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences) && filteredExpenses.isNotEmpty()) {
+                item {
+                    BulkActionsCard(
+                        selectedCount = selectedTransactionIds.size,
+                        selectedTotalByCurrency = filteredExpenses.filter { it.id in selectedTransactionIds }
+                            .groupBy { Currency.fromCode(it.currencyCode) }
+                            .mapValues { (_, entries) -> entries.sumOf { it.amount } },
+                        allVisibleCount = filteredExpenses.size,
+                        onSelectAll = { selectedTransactionIds = filteredExpenses.map { it.id }.toSet() },
+                        onClearSelection = { selectedTransactionIds = emptySet() },
+                        onEditSelected = { showBulkEditDialog = true },
+                        onDeleteSelected = {
+                            viewModel.bulkDeleteTransactions(selectedTransactionIds)
+                            selectedTransactionIds = emptySet()
+                        }
+                    )
+                }
             }
 
             if (uiState.isLoading) {
@@ -629,7 +770,7 @@ fun DashboardScreen(
                 }
             }
 
-            if (filteredExpenses.isEmpty() && !uiState.isLoading) {
+            if (dashboardCardVisible("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences) && filteredExpenses.isEmpty() && !uiState.isLoading) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -681,14 +822,28 @@ fun DashboardScreen(
                 }
             }
 
-            if (filteredExpenses.isNotEmpty()) {
+            if (dashboardCardVisible("transactions", selectedDashboardGroup, uiState.dashboardCardPreferences) && filteredExpenses.isNotEmpty()) {
                 items(filteredExpenses, key = { it.id }) { expense ->
                     ExpenseItem(
                         expense = expense,
                         categoryColor = categoryColor(
                             uiState.categoryState.categories.find { it.name == expense.category }
                         ),
-                        onClick = { onExpenseClick(expense) }
+                        selected = expense.id in selectedTransactionIds,
+                        onSelectionChange = { checked ->
+                            selectedTransactionIds = if (checked) selectedTransactionIds + expense.id else selectedTransactionIds - expense.id
+                        },
+                        onClick = {
+                            if (selectedTransactionIds.isNotEmpty()) {
+                                selectedTransactionIds = if (expense.id in selectedTransactionIds) {
+                                    selectedTransactionIds - expense.id
+                                } else {
+                                    selectedTransactionIds + expense.id
+                                }
+                            } else {
+                                onExpenseClick(expense)
+                            }
+                        }
                     )
                 }
             }
@@ -764,6 +919,24 @@ fun DashboardScreen(
             onDismiss = { showExchangeDialog = false }
         )
     }
+
+    if (showBulkEditDialog) {
+        BulkEditDialog(
+            categories = uiState.categoryState.categories.map { it.name }.ifEmpty { listOf("Other") },
+            accountOptions = accountOptions.drop(1),
+            onSave = { category, account, tags ->
+                viewModel.bulkUpdateTransactions(
+                    ids = selectedTransactionIds,
+                    category = category.takeIf { it != "No change" },
+                    paymentMethod = account.takeIf { it != "No change" },
+                    tags = tags.split(",").map { it.trim() }.filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }
+                )
+                selectedTransactionIds = emptySet()
+                showBulkEditDialog = false
+            },
+            onDismiss = { showBulkEditDialog = false }
+        )
+    }
 }
 
 private sealed interface ClearAction {
@@ -786,6 +959,167 @@ private fun ClearAction.message(): String {
         is ClearAction.Month -> "Clear $count transactions from ${month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))}?"
         is ClearAction.All -> "Clear $count transactions from every month? Categories, monthly income, budgets, and settings will stay."
     }
+}
+
+@Composable
+private fun DashboardGroupSelector(
+    groups: List<String>,
+    selectedGroup: String,
+    onGroupSelected: (String) -> Unit
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+        groups.forEach { group ->
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onGroupSelected(group) },
+                shape = Shapes.full,
+                color = if (selectedGroup == group) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            ) {
+                Text(
+                    text = group,
+                    modifier = Modifier.padding(horizontal = Spacing.sm, vertical = Spacing.sm),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (selectedGroup == group) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardFeatureContainer(
+    cardId: String,
+    selectedGroup: String,
+    preferences: List<DashboardCardPreference>,
+    onToggleCollapsed: (String) -> Unit,
+    content: @Composable () -> Unit
+) {
+    val preference = preferences.firstOrNull { it.id == cardId }
+        ?: DashboardCardPreference(cardId, cardId.replace("_", " ").replaceFirstChar { it.uppercase() })
+    if (!preference.visible || preference.group != selectedGroup) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            TextButton(onClick = { onToggleCollapsed(cardId) }) {
+                Icon(
+                    imageVector = if (preference.collapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                    contentDescription = if (preference.collapsed) "Expand ${preference.title}" else "Collapse ${preference.title}",
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(if (preference.collapsed) "Show ${preference.title}" else "Collapse")
+            }
+        }
+        if (!preference.collapsed) {
+            content()
+        }
+    }
+}
+
+private fun dashboardCardVisible(cardId: String, selectedGroup: String, preferences: List<DashboardCardPreference>): Boolean {
+    val preference = preferences.firstOrNull { it.id == cardId } ?: return true
+    return preference.visible && preference.group == selectedGroup
+}
+
+@Composable
+private fun BulkActionsCard(
+    selectedCount: Int,
+    selectedTotalByCurrency: Map<Currency, Double>,
+    allVisibleCount: Int,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+    onEditSelected: () -> Unit,
+    onDeleteSelected: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = Shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = CardElevation)
+    ) {
+        Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
+            SectionHeader(
+                title = "Bulk Actions",
+                subtitle = if (selectedCount == 0) "Select transactions to edit or delete together" else "$selectedCount selected of $allVisibleCount"
+            )
+            if (selectedTotalByCurrency.isNotEmpty()) {
+                selectedTotalByCurrency.forEach { (currency, total) ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(currency.code, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(formatCurrencyRounded(total, currency), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                OutlinedButton(onClick = onSelectAll, modifier = Modifier.weight(1f), shape = Shapes.medium) {
+                    Text("Select All")
+                }
+                OutlinedButton(onClick = onClearSelection, enabled = selectedCount > 0, modifier = Modifier.weight(1f), shape = Shapes.medium) {
+                    Text("Clear")
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Button(onClick = onEditSelected, enabled = selectedCount > 0, modifier = Modifier.weight(1f), shape = Shapes.medium) {
+                    Text("Edit Selected")
+                }
+                OutlinedButton(onClick = onDeleteSelected, enabled = selectedCount > 0, modifier = Modifier.weight(1f), shape = Shapes.medium) {
+                    Text("Delete Selected")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BulkEditDialog(
+    categories: List<String>,
+    accountOptions: List<String>,
+    onSave: (String, String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var category by remember { mutableStateOf("No change") }
+    var account by remember { mutableStateOf("No change") }
+    var tags by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Selected Transactions") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                FilterDropdown(
+                    label = "Category",
+                    selectedValue = category,
+                    options = listOf("No change") + categories,
+                    onOptionSelected = { category = it }
+                )
+                FilterDropdown(
+                    label = "Payment account",
+                    selectedValue = account,
+                    options = listOf("No change") + accountOptions,
+                    onOptionSelected = { account = it }
+                )
+                OutlinedTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    label = { Text("Replace tags, comma separated") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = Shapes.medium
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(category, account, tags) }) {
+                Text("Apply")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @Composable
@@ -1028,9 +1362,20 @@ private fun SavingsDashboardCard(
 private fun CalendarSpendingCard(
     selectedMonth: YearMonth,
     expenses: List<Expense>,
-    preferredCurrency: Currency
+    preferredCurrency: Currency,
+    conversionEnabled: Boolean,
+    exchangeRates: Map<String, Double>,
+    onClearDay: (LocalDate) -> Unit
 ) {
     val expensesByDay = expenses.groupBy { it.date.dayOfMonth }
+    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
+    val dayIntensityTotals = (1..selectedMonth.lengthOfMonth()).associateWith { day ->
+        val dayExpenses = expensesByDay[day].orEmpty()
+        convertedSpending(dayExpenses, preferredCurrency, exchangeRates, conversionEnabled)
+            ?: dayExpenses.filter { Currency.fromCode(it.currencyCode) == preferredCurrency }.sumOf { it.amount }
+    }
+    val maxDayTotal = dayIntensityTotals.values.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = Shapes.large,
@@ -1040,8 +1385,14 @@ private fun CalendarSpendingCard(
         Column(modifier = Modifier.padding(Spacing.lg), verticalArrangement = Arrangement.spacedBy(Spacing.md)) {
             SectionHeader(
                 title = "Spending Calendar",
-                subtitle = selectedMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
+                subtitle = "Heatmap for ${selectedMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))}"
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(Spacing.md), verticalAlignment = Alignment.CenterVertically) {
+                HeatLegendChip("None", 0f)
+                HeatLegendChip("Low", 0.25f)
+                HeatLegendChip("Medium", 0.55f)
+                HeatLegendChip("High", 0.9f)
+            }
             (1..selectedMonth.lengthOfMonth()).chunked(7).forEach { week ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                     week.forEach { day ->
@@ -1049,10 +1400,20 @@ private fun CalendarSpendingCard(
                         val preferredTotal = dayExpenses
                             .filter { Currency.fromCode(it.currencyCode) == preferredCurrency }
                             .sumOf { it.amount }
+                        val intensity = ((dayIntensityTotals[day] ?: 0.0) / maxDayTotal).toFloat().coerceIn(0f, 1f)
                         Surface(
-                            modifier = Modifier.weight(1f).height(58.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(58.dp)
+                                .clickable(enabled = dayExpenses.isNotEmpty()) {
+                                    selectedDate = selectedMonth.atDay(day)
+                                },
                             shape = Shapes.medium,
-                            color = if (dayExpenses.isNotEmpty()) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                            color = if (dayExpenses.isNotEmpty()) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f + (0.54f * intensity))
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f)
+                            }
                         ) {
                             Column(
                                 modifier = Modifier.padding(Spacing.xs),
@@ -1078,6 +1439,91 @@ private fun CalendarSpendingCard(
             }
         }
     }
+
+    selectedDate?.let { date ->
+        val dayExpenses = expenses.filter { it.date == date }
+        DayDetailDialog(
+            date = date,
+            expenses = dayExpenses,
+            preferredCurrency = preferredCurrency,
+            onClearDay = {
+                onClearDay(date)
+                selectedDate = null
+            },
+            onDismiss = { selectedDate = null }
+        )
+    }
+}
+
+@Composable
+private fun HeatLegendChip(label: String, intensity: Float) {
+    Row(horizontalArrangement = Arrangement.spacedBy(Spacing.xs), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(Shapes.full)
+                .background(
+                    if (intensity == 0f) {
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    } else {
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f + (0.54f * intensity))
+                    }
+                )
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun DayDetailDialog(
+    date: LocalDate,
+    expenses: List<Expense>,
+    preferredCurrency: Currency,
+    onClearDay: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val totalsByCurrency = expenses
+        .groupBy { Currency.fromCode(it.currencyCode) }
+        .mapValues { (_, entries) -> entries.sumOf { it.amount } }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(date.format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault()))) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                Text("${expenses.size} transactions", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                totalsByCurrency.forEach { (currency, total) ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(currency.displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(formatCurrency(total, currency), style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                expenses.take(8).forEach { expense ->
+                    Surface(shape = Shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(Spacing.md),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(expense.category, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                                Text(expense.description.ifBlank { expense.paymentMethod }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(formatCurrencyRounded(expense.amount, Currency.fromCode(expense.currencyCode)), style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+                if (expenses.any { Currency.fromCode(it.currencyCode) == preferredCurrency }) {
+                    Text("Preferred-currency total is used for intensity when available.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onClearDay) { Text("Clear Day") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        }
+    )
 }
 
 @Composable
@@ -1118,6 +1564,8 @@ private fun ExchangeConversionCard(
 @Composable
 private fun SavingsGoalsCard(
     goals: List<SavingsGoal>,
+    suggestedSavings: Double,
+    onAutoAllocate: () -> Unit,
     onEditClick: () -> Unit
 ) {
     Card(
@@ -1142,6 +1590,14 @@ private fun SavingsGoalsCard(
             if (goals.isEmpty()) {
                 Text("No goals yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
+                OutlinedButton(
+                    onClick = onAutoAllocate,
+                    enabled = suggestedSavings > 0.0,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = Shapes.medium
+                ) {
+                    Text("Auto-Allocate This Month's Savings")
+                }
                 goals.forEach { goal ->
                     val goalCurrency = Currency.fromCode(goal.currencyCode)
                     val progress = if (goal.targetAmount > 0.0) (goal.currentAmount / goal.targetAmount).toFloat().coerceIn(0f, 1f) else 0f
@@ -1925,6 +2381,26 @@ private fun TransactionFilterCard(
     accountOptions: List<String>,
     selectedAccount: String,
     onAccountSelected: (String) -> Unit,
+    currencyOptions: List<String>,
+    selectedCurrency: String,
+    onCurrencySelected: (String) -> Unit,
+    minAmountInput: String,
+    onMinAmountInputChange: (String) -> Unit,
+    maxAmountInput: String,
+    onMaxAmountInputChange: (String) -> Unit,
+    tagFilter: String,
+    onTagFilterChange: (String) -> Unit,
+    typeOptions: List<String>,
+    selectedType: String,
+    onTypeSelected: (String) -> Unit,
+    receiptOptions: List<String>,
+    selectedReceipt: String,
+    onReceiptSelected: (String) -> Unit,
+    recurringOptions: List<String>,
+    selectedRecurring: String,
+    onRecurringSelected: (String) -> Unit,
+    overBudgetOnly: Boolean,
+    onOverBudgetOnlyChange: (Boolean) -> Unit,
     startDateInput: String,
     onStartDateInputChange: (String) -> Unit,
     endDateInput: String,
@@ -1945,7 +2421,7 @@ private fun TransactionFilterCard(
         ) {
             SectionHeader(
                 title = "Search & Filters",
-                subtitle = "Find transactions by text, category, or payment method"
+                subtitle = "Find transactions by text, category, currency, amount, tags, source, or budget status"
             )
             OutlinedTextField(
                 value = searchQuery,
@@ -1976,6 +2452,90 @@ private fun TransactionFilterCard(
                     onOptionSelected = onAccountSelected,
                     modifier = Modifier.weight(1f)
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                FilterDropdown(
+                    label = "Currency",
+                    selectedValue = selectedCurrency,
+                    options = currencyOptions,
+                    onOptionSelected = onCurrencySelected,
+                    modifier = Modifier.weight(1f)
+                )
+                FilterDropdown(
+                    label = "Type",
+                    selectedValue = selectedType,
+                    options = typeOptions,
+                    onOptionSelected = onTypeSelected,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                OutlinedTextField(
+                    value = minAmountInput,
+                    onValueChange = onMinAmountInputChange,
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Min amount") },
+                    singleLine = true,
+                    shape = Shapes.medium
+                )
+                OutlinedTextField(
+                    value = maxAmountInput,
+                    onValueChange = onMaxAmountInputChange,
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Max amount") },
+                    singleLine = true,
+                    shape = Shapes.medium
+                )
+            }
+            OutlinedTextField(
+                value = tagFilter,
+                onValueChange = onTagFilterChange,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Tags, comma separated") },
+                singleLine = true,
+                shape = Shapes.medium
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm)
+            ) {
+                FilterDropdown(
+                    label = "Receipt",
+                    selectedValue = selectedReceipt,
+                    options = receiptOptions,
+                    onOptionSelected = onReceiptSelected,
+                    modifier = Modifier.weight(1f)
+                )
+                FilterDropdown(
+                    label = "Source",
+                    selectedValue = selectedRecurring,
+                    options = recurringOptions,
+                    onOptionSelected = onRecurringSelected,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = Shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(Spacing.md),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Only over-budget category transactions", style = MaterialTheme.typography.labelLarge)
+                    androidx.compose.material3.Switch(
+                        checked = overBudgetOnly,
+                        onCheckedChange = onOverBudgetOnlyChange
+                    )
+                }
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2333,6 +2893,8 @@ private fun CategoryMiniCard(
 private fun ExpenseItem(
     expense: Expense,
     categoryColor: Color,
+    selected: Boolean,
+    onSelectionChange: (Boolean) -> Unit,
     onClick: () -> Unit
 ) {
     val isTransfer = expense.isTransfer
@@ -2356,6 +2918,10 @@ private fun ExpenseItem(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Checkbox(
+                checked = selected,
+                onCheckedChange = onSelectionChange
+            )
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.spacedBy(Spacing.md),
@@ -2634,6 +3200,49 @@ private fun convertedSpending(
         }
     }
     return if (missingRate) null else total
+}
+
+private fun buildEffectiveBudgets(
+    budgets: List<CategoryBudget>,
+    expenses: List<Expense>,
+    rolloverSettings: List<CategoryRolloverSetting>,
+    selectedMonth: YearMonth
+): Map<String, Double> {
+    val settingsByCategory = rolloverSettings.associateBy { it.category.lowercase(Locale.getDefault()) }
+    val selectedBudgets = budgets
+        .filter { it.period == selectedMonth.toString() }
+        .associateBy { it.category }
+    return selectedBudgets.mapValues { (category, budget) ->
+        val setting = settingsByCategory[category.lowercase(Locale.getDefault())]
+        if (setting?.enabled != true) {
+            budget.amount
+        } else {
+            val previousMonth = selectedMonth.minusMonths(1)
+            val previousBudget = budgets.firstOrNull {
+                it.period == previousMonth.toString() && it.category.equals(category, ignoreCase = true)
+            }?.amount ?: 0.0
+            val previousSpent = expenses
+                .filter { YearMonth.from(it.date) == previousMonth && it.category.equals(category, ignoreCase = true) }
+                .spendingTotal()
+            val rollover = (previousBudget - previousSpent).let { amount ->
+                if (amount >= 0.0 || setting.carryOverspend) amount else 0.0
+            }
+            budget.amount + rollover
+        }
+    }
+}
+
+private fun isExpenseOverEffectiveBudget(
+    expense: Expense,
+    visibleMonthExpenses: List<Expense>,
+    effectiveBudgetsByCategory: Map<String, Double>
+): Boolean {
+    val effectiveBudget = effectiveBudgetsByCategory[expense.category] ?: return false
+    if (effectiveBudget <= 0.0) return false
+    val categorySpent = visibleMonthExpenses
+        .filter { it.category == expense.category && Currency.fromCode(it.currencyCode) == Currency.fromCode(expense.currencyCode) }
+        .spendingTotal()
+    return categorySpent > effectiveBudget
 }
 
 private fun parseCurrentPeriodFromSheet(sheetName: String): YearMonth {
