@@ -1,7 +1,7 @@
 package com.financetracker.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -479,15 +479,15 @@ private fun SettingsSection(
     Column {
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
         )
         Text(
             text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Spacer(modifier = Modifier.height(Spacing.sm))
+        Spacer(modifier = Modifier.height(Spacing.md))
         content()
     }
 }
@@ -595,10 +595,12 @@ private fun DashboardCardPreferenceRow(
         modifier = Modifier
             .fillMaxWidth()
             .pointerInput(canMoveUp, canMoveDown) {
-                detectVerticalDragGestures(
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { dragAmount = 0f },
                     onDragEnd = { dragAmount = 0f },
-                    onVerticalDrag = { _, dragDelta ->
-                        dragAmount += dragDelta
+                    onDragCancel = { dragAmount = 0f },
+                    onDrag = { _, dragDelta ->
+                        dragAmount += dragDelta.y
                         when {
                             dragAmount < -36f && canMoveUp -> {
                                 onMoveUp()
